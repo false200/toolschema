@@ -368,4 +368,10 @@ MIT. See [LICENSE](LICENSE).
 
 ## Contributing
 
-PRs welcome. Read [AGENTS.md](AGENTS.md) for implementation rules. Run `uv run pytest && uv run ruff check src tests` before submitting.
+PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Run `uv run pytest && uv run ruff check src tests` before submitting.
+
+## Community
+
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security policy](SECURITY.md)

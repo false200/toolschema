@@ -1,0 +1,32 @@
+name: Issue
+description: Report a bug or request a feature
+title: "[Issue]: "
+labels: []
+body:
+  - type: input
+    id: title_summary
+    attributes:
+      label: Title
+      description: Short summary of the issue (also edit the issue title above).
+      placeholder: "MCP adapter leaves $ref in inputSchema"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, what you expected, and steps to reproduce (if applicable).
+      placeholder: |
+        ## What happened
+
+        ## What you expected
+
+        ## Steps to reproduce
+
+        ## Environment
+        - Python version:
+        - toolschema version:
+        - Integration (FastMCP / LangChain / etc.):
+    validations:
+      required: true
