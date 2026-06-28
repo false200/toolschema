@@ -1,6 +1,6 @@
 [project]
 name = "toolschema"
-version = "1.0.0"
+version = "1.0.1"
 description = "Canonical Python layer for AI agent tools — function to JSON Schema, once, everywhere."
 readme = "README.md"
 license = { text = "MIT" }

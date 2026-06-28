@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.1] - 2026-06-28
+
+### Changed
+
+- README intro: Zod + Standard Schema positioning
+- PyPI publish via GitHub Actions trusted publishing (`environment: pypi`)
+
+[1.0.1]: https://github.com/false200/toolschema/releases/tag/v1.0.1
+
 ## [1.0.0] - 2026-06-28
 
 ### Added
