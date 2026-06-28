@@ -36,3 +36,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # Uses PYPI_API_TOKEN when set; otherwise OIDC trusted publishing.
+          password: ${{ secrets.PYPI_API_TOKEN }}

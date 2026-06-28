@@ -4,13 +4,25 @@ Automated publishing runs on every **`v*`** git tag push or GitHub Release publi
 
 Workflow: [`.github/workflows/publish.yml`](workflows/publish.yml)
 
-## One-time setup (trusted publishing — recommended)
+## Fastest fix: API token (works right now)
 
-No API token stored in GitHub secrets.
+You already published v1.0.0 manually — use the same token in GitHub:
 
-1. Log in to https://pypi.org
-2. Open **toolschema** → **Publishing** → **Add a new pending publisher**
-3. Choose **GitHub** and fill in:
+1. Log in to https://pypi.org as **OpenSourcer** (project owner)
+2. **Account settings** → **API tokens** → **Add API token**
+   - Scope: **Entire account** or project `toolschema`
+3. GitHub → https://github.com/false200/toolschema/settings/secrets/actions
+4. **New repository secret**
+   - Name: `PYPI_API_TOKEN`
+   - Value: paste the token (`pypi-...`)
+5. **Actions** → **Publish to PyPI** → **Run workflow**
+
+`publish.yml` uses the secret when present; no trusted publisher setup required.
+
+## Trusted publishing (no token in GitHub)
+
+1. Log in to https://pypi.org as **OpenSourcer**
+2. https://pypi.org/manage/project/toolschema/publishing/ → **Add a new pending publisher** → GitHub
 
 | Field | Value |
 |-------|--------|
@@ -20,30 +32,15 @@ No API token stored in GitHub secrets.
 | Workflow name | `publish.yml` |
 | Environment name | `pypi` |
 
-4. Save — no GitHub secrets needed
+3. Save — remove `PYPI_API_TOKEN` secret if you switch to this
 
-`publish.yml` already uses `environment: pypi` with URL `https://pypi.org/p/toolschema`. After a successful CI publish, GitHub shows a green **pypi** deployment badge on the commit (same as queuebridge).
+`publish.yml` uses `environment: pypi` with URL `https://pypi.org/p/toolschema`. After a successful CI publish, GitHub shows a green **pypi** deployment badge on the commit.
+
+Trusted publishing is used automatically when `PYPI_API_TOKEN` is not set.
 
 ### Optional: protect releases with a GitHub environment
 
 GitHub → **Settings** → **Environments** → **pypi** → add required reviewers or branch rules before publish runs.
-
-## Alternative: API token
-
-If you skip trusted publishing:
-
-1. Create a PyPI API token at https://pypi.org/manage/account/token/
-2. GitHub → **Settings** → **Secrets and variables** → **Actions**
-3. Add secret `PYPI_API_TOKEN`
-4. Change `publish.yml` to use `password: ${{ secrets.PYPI_API_TOKEN }}` in `gh-action-pypi-publish` — or use:
-
-```yaml
-- run: uv publish
-  env:
-    UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-```
-
-Trusted publishing is preferred (already configured in the default workflow).
 
 ## Release a new version
 
