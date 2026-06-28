@@ -5,9 +5,11 @@
 [![CI](https://github.com/false200/toolschema/actions/workflows/ci.yml/badge.svg)](https://github.com/false200/toolschema/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Canonical Python layer for AI agent tools — `(function + type hints) → JSON Schema`, once, for every provider. One `ToolDefinition`, adapters at the edge.
+**Function → JSON Schema, once, everywhere.**
 
-FastMCP generates MCP-only schemas. LangChain re-infers per `StructuredTool`. OpenAI strict mode wants every key in `required`. Claude Desktop breaks on `$ref`. **toolschema** introspects the function once and exports OpenAI, Anthropic, Gemini, and MCP shapes from the same IR — with thin hooks for FastMCP, LangChain, OpenAI Agents, and Pydantic AI.
+Python's answer to the gap TypeScript solved with [Zod](https://zod.dev/) + [Standard Schema](https://standardschema.dev/). Write a typed function. Export one schema. Use it in OpenAI, Anthropic, Gemini, MCP, LangChain, FastMCP, and Pydantic AI — without rewriting.
+
+Every agent framework generates tool JSON differently. FastMCP is MCP-only. LangChain infers its own schema. OpenAI strict mode wants every field required. Claude Desktop breaks on `$ref`. **toolschema** is Layer 1 only: introspect a function once, adapt at the edge.
 
 ## Install
 
