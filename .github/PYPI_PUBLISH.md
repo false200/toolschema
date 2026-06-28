@@ -18,13 +18,15 @@ No API token stored in GitHub secrets.
 | Owner | `false200` |
 | Repository name | `toolschema` |
 | Workflow name | `publish.yml` |
-| Environment name | *(leave blank)* |
+| Environment name | `pypi` |
 
 4. Save — no GitHub secrets needed
 
+`publish.yml` already uses `environment: pypi` with URL `https://pypi.org/p/toolschema`. After a successful CI publish, GitHub shows a green **pypi** deployment badge on the commit (same as queuebridge).
+
 ### Optional: protect releases with a GitHub environment
 
-Add `environment: pypi` to the job in `publish.yml`, create a **pypi** environment on GitHub, and set Environment name to `pypi` on PyPI.
+GitHub → **Settings** → **Environments** → **pypi** → add required reviewers or branch rules before publish runs.
 
 ## Alternative: API token
 
@@ -68,13 +70,15 @@ uv publish
 # set UV_PUBLISH_TOKEN first
 ```
 
-## Note: GitHub "Packages" tab
+## Note: GitHub "Packages" vs PyPI badge
 
-The **Packages** section on your GitHub repo is for **GitHub Packages** (containers, npm on ghcr.io), not PyPI.
+The repo sidebar **Packages → No packages published** is **GitHub Packages** (Docker, npm on ghcr.io). PyPI will never appear there. That is normal for every Python project on PyPI, including queuebridge.
 
-PyPI distribution lives at:
+What queuebridge shows (green check + **pypi**) is a **deployment** from GitHub Actions after CI publishes with trusted publishing + `environment: pypi`. It appears on commits/tags and under **Environments**, not under Packages.
+
+toolschema v1.0.0 was uploaded manually, so no deployment badge exists yet. After trusted publishing is configured, push a new tag (e.g. `v1.0.1`) and the badge appears on that commit.
+
+PyPI install:
 
 - https://pypi.org/project/toolschema/
 - `pip install toolschema`
-
-Link it in your repo **About** website field and README badges (already done).
