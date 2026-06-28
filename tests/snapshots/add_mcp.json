@@ -1,0 +1,23 @@
+{
+  "name": "add",
+  "description": "Add two numbers.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "integer"
+      },
+      "b": {
+        "type": "integer",
+        "default": 1
+      }
+    },
+    "additionalProperties": false,
+    "required": [
+      "a"
+    ]
+  },
+  "outputSchema": {
+    "type": "integer"
+  }
+}

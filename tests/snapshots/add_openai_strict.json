@@ -1,0 +1,24 @@
+{
+  "type": "function",
+  "function": {
+    "name": "add",
+    "description": "Add two numbers.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "integer",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "a",
+        "b"
+      ]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "type": "function",
+  "function": {
+    "name": "search_github",
+    "description": "Search issues in a GitHub repository.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 10
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "query",
+        "limit"
+      ]
+    }
+  }
+}

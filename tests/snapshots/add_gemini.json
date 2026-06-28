@@ -1,0 +1,20 @@
+{
+  "name": "add",
+  "description": "Add two numbers.",
+  "parameters": {
+    "type": "OBJECT",
+    "properties": {
+      "a": {
+        "type": "INTEGER"
+      },
+      "b": {
+        "type": "INTEGER",
+        "default": 1
+      }
+    },
+    "additionalProperties": false,
+    "required": [
+      "a"
+    ]
+  }
+}

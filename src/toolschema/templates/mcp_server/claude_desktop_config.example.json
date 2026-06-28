@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "{{project_name}}": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "{{package_name}}"],
+      "cwd": "REPLACE_WITH_ABSOLUTE_PATH_TO_PROJECT"
+    }
+  }
+}

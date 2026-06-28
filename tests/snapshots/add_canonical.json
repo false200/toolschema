@@ -1,0 +1,24 @@
+{
+  "name": "add",
+  "description": "Add two numbers.",
+  "parameters": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "integer"
+      },
+      "b": {
+        "type": "integer",
+        "default": 1
+      }
+    },
+    "additionalProperties": false,
+    "required": [
+      "a"
+    ]
+  },
+  "output": {
+    "type": "integer"
+  }
+}

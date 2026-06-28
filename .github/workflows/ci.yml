@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff check
+        run: uv run ruff check src tests
+
+      - name: Pytest
+        run: uv run pytest -v
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies with integration extras
+        run: uv sync --extra dev --extra fastmcp --extra langchain --extra openai-agents --extra pydantic-ai
+
+      - name: Ruff check
+        run: uv run ruff check src tests
+
+      - name: Integration, MCP smoke, parity, and deep agent tests
+        run: uv run pytest -v tests/test_integrations.py tests/test_parity.py tests/test_mcp_smoke.py tests/test_init.py tests/test_deep_agents.py
+
+      - name: Example smoke checks
+        run: |
+          uv run python examples/02_mcp_server.py --check
+          uv run python examples/03_langchain.py
+          uv run python examples/deep_agents_demo.py
+
+      - name: Init scaffold smoke
+        run: |
+          uv run toolschema init ci-smoke-test --path /tmp
+          cd /tmp/ci-smoke-test
+          uv add --editable "${{ github.workspace }}[fastmcp]"
+          uv sync
+          uv run python -m ci_smoke_test --check

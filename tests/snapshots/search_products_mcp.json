@@ -1,0 +1,104 @@
+{
+  "name": "search_products",
+  "description": "Search the product catalog with filters and sorting.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query",
+        "minLength": 1
+      },
+      "category": {
+        "type": "string",
+        "description": "Product category slug"
+      },
+      "tags": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "price_min": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "price_max": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "sort": {
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "default": "asc"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max results",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 20
+      },
+      "include_metadata": {
+        "type": "boolean",
+        "default": false
+      },
+      "filters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "mode": {
+        "enum": [
+          "fuzzy",
+          "exact"
+        ],
+        "default": "fuzzy"
+      }
+    },
+    "additionalProperties": false,
+    "required": [
+      "query",
+      "category"
+    ]
+  },
+  "outputSchema": {
+    "type": "array",
+    "items": {
+      "type": "object"
+    }
+  }
+}
