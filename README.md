@@ -368,6 +368,10 @@ MIT. See [LICENSE](LICENSE).
 
 PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Run `uv run pytest && uv run ruff check src tests` before submitting.
 
+## Publishing
+
+See [.github/PYPI_PUBLISH.md](.github/PYPI_PUBLISH.md) for automated PyPI releases via GitHub Actions.
+
 ## Community
 
 - [Documentation](https://toolschema.readthedocs.io)

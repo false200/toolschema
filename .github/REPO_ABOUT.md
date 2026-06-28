@@ -42,3 +42,5 @@ After pushing tag `v1.0.0`:
 5. Publish release
 
 PyPI is already live: https://pypi.org/project/toolschema/
+
+Automated PyPI deploy: see [PYPI_PUBLISH.md](PYPI_PUBLISH.md) — configure trusted publishing once, then every `v*` tag publishes automatically.
