@@ -1,0 +1,57 @@
+site_name: toolschema
+site_description: Python function to JSON Schema for AI agent tools
+site_url: https://toolschema.readthedocs.io
+repo_url: https://github.com/false200/toolschema
+repo_name: false200/toolschema
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: installation.md
+      - Quick start: quickstart.md
+      - Defining tools: defining-tools.md
+  - Guides:
+      - Provider adapters: adapters.md
+      - Framework integrations: integrations.md
+      - Validation: validation.md
+      - Standard Schema: standard-schema.md
+      - CLI: cli.md
+      - MCP scaffolding: scaffolding.md
+  - Reference:
+      - API reference: api-reference.md
+      - Type mapping: type-mapping.md
+      - Architecture: architecture.md
+  - Tutorials:
+      - Overview: tutorials/README.md
+      - Getting started: tutorials/01-getting-started.md
+      - MCP server: tutorials/02-mcp-server.md
+      - LangChain: tutorials/03-langchain-integration.md
+      - Multi-provider: tutorials/04-multi-provider-export.md
+  - More:
+      - Examples: examples.md
+      - Provider quirks: provider-quirks.md
+      - Pre-PEP alignment: pre-pep-alignment.md
+      - Claude Desktop: claude-desktop.md
+      - FAQ: faq.md
+
+plugins:
+  - search

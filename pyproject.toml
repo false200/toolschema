@@ -41,6 +41,10 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.8",
 ]
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.5",
+]
 pydantic = ["pydantic>=2.0"]
 fastmcp = ["fastmcp>=2.0"]
 langchain = ["langchain-core>=0.3", "pydantic>=2.0"]
@@ -55,7 +59,7 @@ toolschema = "toolschema.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/false200/toolschema"
-Documentation = "https://github.com/false200/toolschema#readme"
+Documentation = "https://toolschema.readthedocs.io"
 Repository = "https://github.com/false200/toolschema"
 Issues = "https://github.com/false200/toolschema/issues"
 "Pre-PEP alignment" = "https://discuss.python.org/t/pre-pep-discussion-typing-tool-inspect-tool-schema-close-the-zod-gap-for-python-agent-dev/107431"

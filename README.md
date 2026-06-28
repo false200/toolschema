@@ -29,7 +29,9 @@ pip install toolschema[all]            # all integrations + dev tools
 
 Requires **Python 3.10+**. Core has zero framework dependencies (`typing_extensions` on 3.10 only).
 
-**Docs:** [tutorials](docs/tutorials/) · [provider quirks](docs/provider-quirks.md) · [Pre-PEP alignment](docs/pre-pep-alignment.md) · [Claude Desktop smoke test](docs/claude-desktop.md)
+**Full documentation:** https://toolschema.readthedocs.io (or build locally: `pip install mkdocs mkdocs-material && mkdocs serve`)
+
+Docs links: [tutorials](docs/tutorials/) · [API reference](docs/api-reference.md) · [provider quirks](docs/provider-quirks.md)
 
 ## Usage
 
@@ -367,6 +369,7 @@ PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Run `uv run pytest && uv ru
 
 ## Community
 
+- [Documentation](https://toolschema.readthedocs.io)
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security policy](SECURITY.md)
