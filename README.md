@@ -6,375 +6,263 @@
 [![CI](https://github.com/false200/toolschema/actions/workflows/ci.yml/badge.svg)](https://github.com/false200/toolschema/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**Function → JSON Schema, once, everywhere.**
+**Write a Python function once. Get the JSON Schema every AI framework needs.**
 
-Python's answer to the gap TypeScript solved with [Zod](https://zod.dev/) + [Standard Schema](https://standardschema.dev/). Write a typed function. Export one schema. Use it in OpenAI, Anthropic, Gemini, MCP, LangChain, FastMCP, and Pydantic AI — without rewriting.
+LLMs can't read your Python code. They need JSON that describes your tool — name, description, parameters. Today every framework (OpenAI, LangChain, FastMCP, MCP…) wants that JSON in a slightly different shape. **toolschema** builds it from your function **one time**, then exports it anywhere.
 
-Every agent framework generates tool JSON differently. FastMCP is MCP-only. LangChain infers its own schema. OpenAI strict mode wants every field required. Claude Desktop breaks on `$ref`. **toolschema** is Layer 1 only: introspect a function once, adapt at the edge.
+📖 **Full docs:** https://toolschema.readthedocs.io/en/latest/
 
-## Install
+---
 
-```sh
-pip install toolschema
-```
-
-Extras:
-
-```sh
-pip install toolschema[fastmcp]        # FastMCP MCP servers
-pip install toolschema[langchain]      # LangChain StructuredTool
-pip install toolschema[openai-agents]  # OpenAI Agents SDK
-pip install toolschema[pydantic-ai]    # Pydantic AI Tool.from_schema
-pip install toolschema[all]            # all integrations + dev tools
-```
-
-Requires **Python 3.10+**. Core has zero framework dependencies (`typing_extensions` on 3.10 only).
-
-**Full documentation:** https://toolschema.readthedocs.io (or build locally: `pip install mkdocs mkdocs-material && mkdocs serve`)
-
-Docs links: [tutorials](docs/tutorials/) · [API reference](docs/api-reference.md) · [provider quirks](docs/provider-quirks.md)
-
-## Usage
-
-### Define a tool
+## 30-second example
 
 ```python
-from typing import Annotated
-from toolschema import tool, schema, Field
+from toolschema import schema, tool
 
 @tool
-def get_weather(
-    city: Annotated[str, Field(description="City name")],
-    units: str = "celsius",
-) -> dict:
-    """Get current weather for a city."""
-    return {"city": city, "temp": 22, "units": units}
+def greet(name: str) -> str:
+    """Say hello to someone."""
+    return f"Hello, {name}!"
 
-definition = schema(get_weather)
-definition.to_openai()
-definition.to_mcp()
-definition.to_anthropic()
+t = schema(greet)
+
+t.to_openai()      # for ChatGPT / OpenAI Agents
+t.to_mcp()         # for Claude Desktop / Cursor MCP
+t.to_anthropic()   # for Claude API
 ```
 
-Works without `@tool` — any typed function with a docstring:
+That's it. Your function still runs normally: `greet("world")` → `"Hello, world!"`
+
+---
+
+## The problem (in plain English)
+
+You write this:
 
 ```python
 def add(a: int, b: int = 1) -> int:
-    """Add two integers."""
+    """Add two numbers."""
     return a + b
-
-definition = schema(add)
 ```
 
-### FastMCP (MCP server)
+The LLM needs this (JSON):
+
+```json
+{
+  "name": "add",
+  "description": "Add two numbers.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "a": { "type": "integer" },
+      "b": { "type": "integer", "default": 1 }
+    },
+    "required": ["a"]
+  }
+}
+```
+
+**Without toolschema:** you hand-write JSON, or let each framework generate its own (and hope they match).
+
+**With toolschema:** `schema(add)` → done. Export to any provider with one line.
+
+---
+
+## Install
+
+```bash
+pip install toolschema
+```
+
+Need a specific framework? Install an extra:
+
+```bash
+pip install toolschema[fastmcp]       # MCP servers
+pip install toolschema[langchain]     # LangChain
+pip install toolschema[openai-agents]
+pip install toolschema[pydantic-ai]
+pip install toolschema[all]           # everything
+```
+
+Requires **Python 3.10+**.
+
+---
+
+## Beginner guide (5 minutes)
+
+### 1. Write a typed function
+
+Type hints on every parameter. Docstring = what the LLM sees.
 
 ```python
-from fastmcp import FastMCP
-from toolschema import schema
-from toolschema.integrations.fastmcp import register_tool
-from myapp.tools import greet, add
+from toolschema import tool, schema
 
-mcp = FastMCP("my-server")
-register_tool(mcp, schema(greet), greet)
-register_tool(mcp, schema(add), add)
-
-mcp.run()  # stdio MCP server
+@tool
+def search(query: str, limit: int = 10) -> list[dict]:
+    """Search the product catalog."""
+    return [{"query": query, "limit": limit}]
 ```
 
-`register_tool` uses your pre-built schema — no double generation inside FastMCP.
+> `@tool` is optional. `schema(search)` works on any typed function with a docstring.
 
-### LangChain
+### 2. Generate the schema
 
 ```python
-from toolschema import schema
-from toolschema.integrations.langchain import from_toolschema
-from myapp.tools import search
+definition = schema(search)
 
-tool = from_toolschema(schema(search), search)
-result = tool.invoke({"query": "laptop", "limit": 5})
+print(definition.name)         # "search"
+print(definition.description)  # "Search the product catalog."
+print(definition.parameters)   # JSON Schema dict
 ```
 
-### OpenAI Agents SDK
+### 3. Export for your provider
 
 ```python
-from toolschema import schema
-from toolschema.integrations.openai_agents import to_agents_function_tool
-from myapp.tools import add
-
-agents_tool = to_agents_function_tool(schema(add), add)
+openai_payload = definition.to_openai()
+mcp_payload = definition.to_mcp()
 ```
 
-### Pydantic AI
+Or use the CLI:
 
-```python
-from pydantic_ai import Agent
-from toolschema import schema
-from toolschema.integrations.pydantic_ai import from_toolschema
-from myapp.tools import add
-
-tool = from_toolschema(schema(add), add)
-agent = Agent("openai:gpt-4o", tools=[tool])
-```
-
-### Scaffold an MCP project
-
-```sh
-toolschema init my-mcp-server
-cd my-mcp-server
-uv sync
-uv run python -m my_mcp_server --check   # smoke test
-uv run python -m my_mcp_server            # start server
-```
-
-### CLI
-
-```sh
+```bash
 toolschema inspect myapp.tools:search --format mcp
-toolschema inspect myapp.tools:search --format openai,mcp,anthropic
-toolschema diff myapp.tools:search --targets openai,mcp
-toolschema export myapp.tools
-toolschema init my-mcp-server
 ```
 
-## API
+### 4. Plug into a framework (one extra line)
 
-### `@tool`
+Same function, same `definition` — pick your stack:
 
-Optional decorator. Attaches tool metadata; does not change call semantics.
+| You use… | Do this |
+|----------|---------|
+| **FastMCP** | `register_tool(mcp, definition, search)` |
+| **LangChain** | `from_toolschema(definition, search)` |
+| **OpenAI Agents** | `to_agents_function_tool(definition, search)` |
+| **Pydantic AI** | `from_toolschema(definition, search)` |
 
-```python
-@tool(name="custom_name", description="Override docstring")
-def my_fn(x: str) -> str: ...
-```
+Details: [Integrations guide](https://toolschema.readthedocs.io/en/latest/integrations/)
 
 ---
 
-### `schema(fn) -> ToolDefinition`
+## Common patterns
 
-Introspect a typed callable and return the canonical intermediate representation.
-
-#### fn
-
-*Required*  
-Type: `Callable`
-
-Any function or `@tool`-decorated callable with type hints. Docstring becomes the tool description.
-
-```python
-from toolschema import schema
-
-definition = schema(my_function)
-definition.name          # function name (or @tool override)
-definition.description   # docstring (or @tool override)
-definition.parameters    # JSON Schema 2020-12 object
-definition.output        # return-type schema, or None
-```
-
----
-
-### `Field(...)`
-
-Attach JSON Schema constraints and descriptions via `Annotated`:
+### Add parameter descriptions
 
 ```python
 from typing import Annotated
 from toolschema import Field
 
-city: Annotated[str, Field(description="City name", min_length=1)]
+def weather(
+    city: Annotated[str, Field(description="City name", min_length=1)],
+) -> dict:
+    """Get current weather."""
+    ...
 ```
 
-Plain string shorthand (Pre-PEP style):
+Or the short form: `Annotated[str, "City name"]`
 
-```python
-city: Annotated[str, "City name"]
-```
-
----
-
-### `ToolDefinition`
-
-Frozen dataclass — single source of truth for all adapters.
-
-#### `to_json_schema() -> dict`
-
-Canonical record: `name`, `description`, `parameters`, optional `output`.
-
-#### `to_openai(*, strict=False) -> dict`
-
-OpenAI function-calling shape: `{"type": "function", "function": {...}}`.
-
-When `strict=True`, sets `additionalProperties: false` and marks every property required.
-
-#### `to_anthropic() -> dict`
-
-Anthropic Messages API tool shape. Constraints like `minLength` move into `description` text.
-
-#### `to_mcp(*, inline_refs=True) -> dict`
-
-MCP `tools/list` shape with `inputSchema` and optional `outputSchema`.
-
-When `inline_refs=True` (default), flattens `$ref` / `$defs` for Claude Desktop and VS Code Copilot.
-
-#### `to_gemini() -> dict`
-
-Google Gemini `FunctionDeclaration` shape. Parameter types uppercased (`STRING`, `INTEGER`, …).
-
-#### `validate(args) -> ValidationResult`
-
-Thin argument checking against `parameters`. Returns `ValidationSuccess` or `ValidationFailure`.
+### Validate arguments before calling
 
 ```python
 from toolschema import ValidationSuccess
 
-result = definition.validate({"city": "London"})
+result = definition.validate({"query": "laptop"})
 if isinstance(result, ValidationSuccess):
-    print(result.value)
+    search(**result.value)
 ```
 
-#### `standard` (property)
+### Start a new MCP server project
 
-[Standard Schema](https://standardschema.dev/schema) + [Standard JSON Schema](https://standardschema.dev/json-schema) protocol host (`tool.standard["~standard"]`).
+```bash
+toolschema init my-mcp-server
+cd my-mcp-server
+uv sync
+uv run python -m my_mcp_server --check
+```
 
 ---
 
-### Integrations
+## Framework examples
 
-| Function | Package extra | Purpose |
-|----------|---------------|---------|
-| `register_tool(mcp, definition, fn)` | `fastmcp` | Register on FastMCP without `@mcp.tool` schema regen |
-| `from_toolschema(definition, fn)` | `langchain` | `StructuredTool` with `infer_schema=False` |
-| `to_agents_function_tool(definition, fn)` | `openai-agents` | OpenAI Agents `FunctionTool` |
-| `from_toolschema(definition, fn)` | `pydantic-ai` | Pydantic AI `Tool.from_schema` |
-
-Import from submodules:
+### FastMCP (MCP / Claude Desktop)
 
 ```python
+from fastmcp import FastMCP
+from toolschema import schema
 from toolschema.integrations.fastmcp import register_tool
+
+mcp = FastMCP("my-server")
+register_tool(mcp, schema(greet), greet)
+mcp.run()
+```
+
+### LangChain
+
+```python
 from toolschema.integrations.langchain import from_toolschema
-from toolschema.integrations.openai_agents import to_agents_function_tool
-from toolschema.integrations.pydantic_ai import from_toolschema
+
+lc_tool = from_toolschema(schema(search), search)
+lc_tool.invoke({"query": "laptop", "limit": 5})
 ```
 
-## Type coverage
+More examples in [`examples/`](examples/) and the [docs](https://toolschema.readthedocs.io/en/latest/examples/).
 
-| Python | JSON Schema |
-|--------|-------------|
-| `str`, `int`, `float`, `bool` | `string`, `integer`, `number`, `boolean` |
-| `T \| None` | `anyOf: [schema(T), {type: null}]` |
-| `list[T]`, `dict[str, T]` | `array`, `object` with `additionalProperties` |
-| `Literal["a"]`, `Enum` | `enum` |
-| `Annotated[T, Field(...)]` | constraints + `description` |
-| `TypedDict`, `@dataclass` | `object` with `properties` |
-| `Union[A, B]`, `tuple[...]` | `anyOf`, `prefixItems` |
-| Default values | `"default"` key; omitted from `required` |
-| Return type | `output` / `outputSchema` |
+---
 
-Deferred: generics, `ParamSpec`, docstring parameter parsing (Google/NumPy).
+## What toolschema supports
 
-## Architecture
+| Python types | ✅ |
+|--------------|----|
+| `str`, `int`, `float`, `bool` | ✅ |
+| `list`, `dict`, optional (`T \| None`) | ✅ |
+| `Literal`, `Enum`, defaults | ✅ |
+| `TypedDict`, `@dataclass`, `Union` | ✅ |
+| Pydantic models as params | ✅ |
 
-```
-Python function + type hints
-        │
-        ▼
-   schema(fn)  ──►  ToolDefinition (IR)
-        │                │
-        │    ┌───────────┼───────────┬──────────┐
-        ▼    ▼           ▼           ▼          ▼
-    validate()    to_openai()  to_mcp()  to_anthropic()  to_gemini()
-                       │           │
-                       ▼           ▼
-              integrations/   register_tool()
-              langchain       fastmcp
-              openai_agents   pydantic_ai
-```
+| Export targets | ✅ |
+|----------------|----|
+| OpenAI (+ strict mode) | ✅ |
+| Anthropic, Gemini, MCP | ✅ |
+| FastMCP, LangChain, OpenAI Agents, Pydantic AI | ✅ |
 
-**Rule:** adapters read `ToolDefinition` only. Schema is never generated twice.
+Full type table: [docs](https://toolschema.readthedocs.io/en/latest/type-mapping/)
 
-## Why not framework decorators alone?
+---
 
-```
-Your function          FastMCP              LangChain           OpenAI
-------------          -------              ---------           ------
-@mcp.tool()     →     MCP JSON only        rewrite needed      rewrite needed
-@tool (LC)      →     rewrite needed       LC schema only      rewrite needed
-raw OpenAI SDK  →     rewrite needed       rewrite needed      OpenAI JSON only
-```
+## Why toolschema?
 
-- [Pre-PEP `inspect.tool_schema`](https://discuss.python.org/t/pre-pep-discussion-typing-tool-inspect-tool-schema-close-the-zod-gap-for-python-agent-dev/107431): proposed stdlib fix, not shipped yet
-- FastMCP `@mcp.tool()`: MCP transport + Pydantic inference, not portable
-- Pydantic `model_json_schema()`: domain models, not function-tool IR
-- LangChain `StructuredTool.from_function`: infers schema per call site
+| Approach | Problem |
+|----------|---------|
+| Hand-written JSON | Drifts from your code, no single source of truth |
+| `@mcp.tool()` only | MCP-only, not portable to LangChain/OpenAI |
+| `@tool` per framework | Rewrite the same function 3× |
+| **toolschema** | One function → one schema → every provider |
 
-## Comparison
+---
 
-| Solution | OpenAI | Anthropic | MCP | LangChain | FastMCP | Zero lock-in |
-|----------|--------|-----------|-----|-----------|---------|--------------|
-| Framework `@tool` | partial | partial | partial | partial | partial | no |
-| Pydantic JSON Schema | manual | manual | manual | manual | manual | yes |
-| **toolschema** | yes | yes | yes | yes | yes | yes |
+## Learn more
 
-## Provider quirks
+| Topic | Link |
+|-------|------|
+| **Full documentation** | https://toolschema.readthedocs.io/en/latest/ |
+| Quick start tutorial | [docs/quickstart.md](docs/quickstart.md) |
+| Complete API reference | [docs/api-reference.md](docs/api-reference.md) |
+| MCP server tutorial | [docs/tutorials/02-mcp-server.md](docs/tutorials/02-mcp-server.md) |
+| Provider differences | [docs/provider-quirks.md](docs/provider-quirks.md) |
+| FAQ | [docs/faq.md](docs/faq.md) |
 
-| Provider | Behavior |
-|----------|----------|
-| **OpenAI** | `strict=True` → all properties required, `additionalProperties: false` |
-| **Anthropic** | `minLength`, `pattern`, etc. folded into `description` |
-| **MCP** | `inline_refs=True` default; camelCase `inputSchema` / `outputSchema` |
-| **Gemini** | uppercased types; parameters only (no output schema yet) |
+---
 
-Details: [docs/provider-quirks.md](docs/provider-quirks.md)
+## Development
 
-## Examples
-
-| Path | Description |
-|------|-------------|
-| [`examples/01_basic.py`](examples/01_basic.py) | `@tool`, `schema()`, adapter output |
-| [`examples/02_mcp_server.py`](examples/02_mcp_server.py) | FastMCP stdio server + `--check` smoke test |
-| [`examples/03_langchain.py`](examples/03_langchain.py) | LangChain `from_toolschema` + invoke |
-| [`examples/04_multi_provider.py`](examples/04_multi_provider.py) | One function → all provider formats |
-| [`examples/demo_tools.py`](examples/demo_tools.py) | Sample tools module |
-| [`examples/verify_package.py`](examples/verify_package.py) | End-to-end package verification script |
-| [`examples/deep_agents_demo.py`](examples/deep_agents_demo.py) | Cross-framework deep integration demo |
-
-## Testing
-
-```sh
-uv sync --extra dev --extra fastmcp --extra langchain --extra openai-agents --extra pydantic-ai
+```bash
+git clone https://github.com/false200/toolschema.git
+cd toolschema
+uv sync --extra all
 uv run pytest -v
-uv run python examples/deep_agents_demo.py
 ```
 
-92 tests: unit, golden snapshots, parity vs native FastMCP/LangChain, MCP stdio smoke, deep cross-agent harness.
-
-## Non-goals
-
-- Replacing Pydantic for domain modeling / validation
-- Agent orchestration, memory, or MCP transport
-- Live LLM API translation
-
-## Related
-
-- [Pre-PEP: `inspect.tool_schema`](https://discuss.python.org/t/pre-pep-discussion-typing-tool-inspect-tool-schema-close-the-zod-gap-for-python-agent-dev/107431) — API shape we align with
-- [Standard Schema](https://standardschema.dev/) — interop protocol
-- [FastMCP tools](https://gofastmcp.com/servers/tools) — MCP `$ref` client limitations
-- [MCP specification](https://modelcontextprotocol.io/) — `inputSchema` / `outputSchema`
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · PyPI releases: [.github/PYPI_PUBLISH.md](.github/PYPI_PUBLISH.md)
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
-
-## Contributing
-
-PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Run `uv run pytest && uv run ruff check src tests` before submitting.
-
-## Publishing
-
-See [.github/PYPI_PUBLISH.md](.github/PYPI_PUBLISH.md) for automated PyPI releases via GitHub Actions.
-
-## Community
-
-- [Documentation](https://toolschema.readthedocs.io)
-- [Contributing](CONTRIBUTING.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Security policy](SECURITY.md)
+MIT — see [LICENSE](LICENSE).
