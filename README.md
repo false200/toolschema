@@ -1,6 +1,6 @@
 # toolschema
 
-[![PyPI version](https://img.shields.io/pypi/v/toolschema.svg)](https://pypi.org/project/toolschema/)
+[![PyPI version](https://img.shields.io/pypi/v/toolschema.svg?cacheSeconds=300)](https://pypi.org/project/toolschema/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://pypi.org/project/toolschema/)
 [![CI](https://github.com/false200/toolschema/actions/workflows/ci.yml/badge.svg)](https://github.com/false200/toolschema/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
