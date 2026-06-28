@@ -1,6 +1,6 @@
 # {{project_title}}
 
-MCP server scaffolded with [`toolschema init`](https://github.com/your-org/toolschema).
+MCP server scaffolded with [`toolschema init`](https://github.com/false200/toolschema).
 
 Tools are defined as plain Python functions. Schemas are generated once with **toolschema** and registered on FastMCP — no double schema generation.
 

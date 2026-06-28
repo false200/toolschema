@@ -54,10 +54,10 @@ pydantic-ai = [
 toolschema = "toolschema.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/toolschema"
-Documentation = "https://github.com/your-org/toolschema#readme"
-Repository = "https://github.com/your-org/toolschema"
-Issues = "https://github.com/your-org/toolschema/issues"
+Homepage = "https://github.com/false200/toolschema"
+Documentation = "https://github.com/false200/toolschema#readme"
+Repository = "https://github.com/false200/toolschema"
+Issues = "https://github.com/false200/toolschema/issues"
 "Pre-PEP alignment" = "https://discuss.python.org/t/pre-pep-discussion-typing-tool-inspect-tool-schema-close-the-zod-gap-for-python-agent-dev/107431"
 
 [build-system]
