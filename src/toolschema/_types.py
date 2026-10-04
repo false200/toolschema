@@ -7,7 +7,7 @@ import types
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from toolschema._fields import extract_annotated_metadata, merge_field_into_schema
-from toolschema._schema_utils import json_schema_default
+from toolschema._schema_utils import inline_refs, json_schema_default
 
 JSON_SCHEMA_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
@@ -61,19 +61,41 @@ def _explicit_requiredness(annotation: Any) -> bool | None:
 
 
 def _normalize_pydantic_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a Pydantic model_json_schema() payload to a property schema."""
-    result = {k: v for k, v in schema.items() if k not in {"$defs", "$schema", "title"}}
-    properties = result.get("properties")
-    if isinstance(properties, dict):
-        result["properties"] = {
-            name: {k: v for k, v in prop.items() if k != "title"}
-            for name, prop in properties.items()
-            if isinstance(prop, dict)
-        }
+    """Normalize a Pydantic model_json_schema() payload to a property schema.
+
+    Nested models are inlined into the property schema. Circular models keep
+    ``$ref`` together with ``$defs``.
+    """
+    try:
+        resolved = inline_refs(schema)
+    except ValueError:
+        resolved = schema
+    drop = {"$schema", "title"}
+    if "$defs" not in resolved:
+        drop.add("$defs")
+    return _strip_pydantic_node(resolved, drop)
+
+
+def _strip_pydantic_node(schema: dict[str, Any], drop: set[str]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in drop:
+            continue
+        result[key] = _strip_pydantic_value(value, drop)
     if "properties" in result:
         result.setdefault("type", "object")
         result.setdefault("additionalProperties", False)
     return result
+
+
+def _strip_pydantic_value(value: Any, drop: set[str]) -> Any:
+    if isinstance(value, dict):
+        return _strip_pydantic_node(value, drop)
+    if isinstance(value, list):
+        return [
+            _strip_pydantic_value(item, drop) if isinstance(item, dict) else item for item in value
+        ]
+    return value
 
 
 def _is_typeddict(tp: Any) -> bool:
@@ -98,11 +120,19 @@ def _typeddict_to_schema(tp: type[Any]) -> dict[str, Any]:
     else:
         total = getattr(tp, "__total__", True)
         required_keys = set(hints) if total else set()
+    # Python 3.10's typing.TypedDict can put one key in both
+    # __required_keys__ and __optional_keys__ when a subclass redeclares it
+    # and annotations are postponed. Totality breaks the tie unless a
+    # Required or NotRequired marker is present.
+    optional_keys = set(getattr(tp, "__optional_keys__", ()))
+    own_total = bool(getattr(tp, "__total__", True))
     for name, annotation in hints.items():
         explicit = _explicit_requiredness(annotation)
         if explicit is True:
             required_keys.add(name)
         elif explicit is False:
+            required_keys.discard(name)
+        elif name in optional_keys and not own_total:
             required_keys.discard(name)
     required = [name for name in hints if name in required_keys]
     schema: dict[str, Any] = {
