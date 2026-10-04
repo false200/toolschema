@@ -114,7 +114,7 @@ class Sort(str, Enum):
 def list_items(sort: Sort = Sort.ASC, mode: Literal["fast", "safe"] = "fast") -> list: ...
 ```
 
-Both become `"enum": [...]` in the schema.
+Both become `"enum": [...]` in the schema. A default such as `Sort.ASC` is stored as `"asc"`, and `validate()` fills an omitted `sort` with that string.
 
 ## Complex parameter types
 

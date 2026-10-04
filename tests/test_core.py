@@ -8,11 +8,25 @@ from typing import Annotated, Literal
 import fixtures
 
 from toolschema import Field, schema, tool
+from toolschema._validate import ValidationSuccess
 
 
 class _Color(str, Enum):
     RED = "red"
     GREEN = "green"
+
+
+class _PlainColor(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+
+def _paint(
+    color: _PlainColor = _PlainColor.RED,
+    colors: tuple[_PlainColor, ...] = (_PlainColor.RED, _PlainColor.BLUE),
+) -> str:
+    """Paint a surface."""
+    return color.value
 
 
 def test_primitive_params() -> None:
@@ -56,6 +70,22 @@ def test_list_and_dict() -> None:
         "type": "object",
         "additionalProperties": {"type": "string"},
     }
+
+
+def test_plain_enum_default_is_json_value() -> None:
+    tool_def = schema(_paint)
+    props = tool_def.parameters["properties"]
+    assert props["color"] == {"enum": ["red", "blue"], "default": "red"}
+    assert type(props["color"]["default"]) is str
+    assert props["colors"]["default"] == ["red", "blue"]
+    assert type(props["colors"]["default"]) is list
+
+    json.dumps(tool_def.to_openai())
+    json.dumps(tool_def.to_json_schema())
+
+    omitted = tool_def.validate({})
+    assert isinstance(omitted, ValidationSuccess)
+    assert omitted.value == {"color": "red", "colors": ["red", "blue"]}
 
 
 def test_literal_enum() -> None:

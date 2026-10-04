@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, get_type_hints
 
 from toolschema._ir import ToolDefinition
+from toolschema._schema_utils import json_schema_default
 from toolschema._types import JSON_SCHEMA_2020_12, type_to_schema
 
 
@@ -49,7 +50,7 @@ def _build_parameters_schema(fn: Callable[..., Any]) -> dict[str, Any]:
         prop_schema = type_to_schema(annotation)
 
         if param.default is not inspect.Parameter.empty:
-            prop_schema = {**prop_schema, "default": param.default}
+            prop_schema = {**prop_schema, "default": json_schema_default(param.default)}
         else:
             required.append(name)
 
