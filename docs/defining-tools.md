@@ -125,7 +125,7 @@ Both become `"enum": [...]` in the schema. A default such as `Sort.ASC` is store
 | bare `dict` | yes (`type: object`) |
 | `tuple[A, B]` | yes (`prefixItems`) |
 | `tuple[T, ...]` | yes (`items`) |
-| `TypedDict` | yes |
+| `TypedDict` | yes (inheritance, `Required`, `NotRequired`) |
 | `@dataclass` | yes |
 | `Union[A, B]` | yes (`anyOf`) |
 | Pydantic `BaseModel` | yes (duck-typed via `model_json_schema()`) |

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import importlib
 import types
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
@@ -9,6 +10,54 @@ from toolschema._fields import extract_annotated_metadata, merge_field_into_sche
 from toolschema._schema_utils import json_schema_default
 
 JSON_SCHEMA_2020_12 = "https://json-schema.org/draft/2020-12/schema"
+
+
+def _load_marker_groups() -> tuple[frozenset[Any], frozenset[Any], frozenset[Any]]:
+    """Collect Required, NotRequired, and ReadOnly special forms.
+
+    Python 3.10 exposes Required and NotRequired from typing_extensions.
+    ReadOnly arrived in 3.13 (and typing_extensions).
+    """
+    required: set[Any] = set()
+    optional: set[Any] = set()
+    readonly: set[Any] = set()
+    groups = {"Required": required, "NotRequired": optional, "ReadOnly": readonly}
+    for module_name in ("typing", "typing_extensions"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        for name, bucket in groups.items():
+            marker = getattr(module, name, None)
+            if marker is not None:
+                bucket.add(marker)
+    return frozenset(required), frozenset(optional), frozenset(readonly)
+
+
+_REQUIRED_MARKERS, _NOT_REQUIRED_MARKERS, _READONLY_MARKERS = _load_marker_groups()
+_REQUIREDNESS_MARKERS = _REQUIRED_MARKERS | _NOT_REQUIRED_MARKERS | _READONLY_MARKERS
+
+
+def _explicit_requiredness(annotation: Any) -> bool | None:
+    """Return True for Required, False for NotRequired, None if unspecified.
+
+    Annotated and ReadOnly wrappers are peeled so the marker is visible.
+    Postponed annotations must already be resolved by get_type_hints.
+    """
+    current = annotation
+    while True:
+        origin = get_origin(current)
+        if origin is Annotated or origin in _READONLY_MARKERS:
+            args = get_args(current)
+            if not args:
+                return None
+            current = args[0]
+            continue
+        if origin in _REQUIRED_MARKERS:
+            return True
+        if origin in _NOT_REQUIRED_MARKERS:
+            return False
+        return None
 
 
 def _normalize_pydantic_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -37,10 +86,25 @@ def _is_typeddict(tp: Any) -> bool:
 
 
 def _typeddict_to_schema(tp: type[Any]) -> dict[str, Any]:
-    hints = get_type_hints(tp)
-    total = getattr(tp, "__total__", True)
+    # include_extras keeps Annotated/Field. `__total__` is only this class's
+    # flag, so inherited required keys live on `__required_keys__`. That set is
+    # wrong for Required/NotRequired when annotations are postponed (the runtime
+    # sees a string and falls back to `total`), so explicit markers on the
+    # resolved hints override it.
+    hints = get_type_hints(tp, include_extras=True)
     properties = {name: type_to_schema(annotation) for name, annotation in hints.items()}
-    required = list(hints.keys()) if total else []
+    if hasattr(tp, "__required_keys__"):
+        required_keys = set(tp.__required_keys__)
+    else:
+        total = getattr(tp, "__total__", True)
+        required_keys = set(hints) if total else set()
+    for name, annotation in hints.items():
+        explicit = _explicit_requiredness(annotation)
+        if explicit is True:
+            required_keys.add(name)
+        elif explicit is False:
+            required_keys.discard(name)
+    required = [name for name in hints if name in required_keys]
     schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
@@ -52,7 +116,7 @@ def _typeddict_to_schema(tp: type[Any]) -> dict[str, Any]:
 
 
 def _dataclass_to_schema(tp: type[Any]) -> dict[str, Any]:
-    hints = get_type_hints(tp)
+    hints = get_type_hints(tp, include_extras=True)
     properties: dict[str, Any] = {}
     required: list[str] = []
     for field in dataclasses.fields(tp):
@@ -79,6 +143,11 @@ def type_to_schema(tp: Any) -> dict[str, Any]:
     """Convert a Python type annotation to a JSON Schema 2020-12 fragment."""
     origin = get_origin(tp)
     args = get_args(tp)
+
+    if origin in _REQUIREDNESS_MARKERS:
+        if not args:
+            raise TypeError(f"Unsupported type annotation: {tp!r}")
+        return type_to_schema(args[0])
 
     if origin is Annotated:
         base_type, extras = extract_annotated_metadata(args)
