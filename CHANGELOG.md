@@ -7,7 +7,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Enum parameter and dataclass defaults are emitted as the member value. Plain `Enum` defaults were not JSON-serializable, and `validate()` rejected omitted arguments because the member was not in the value `enum`. Tuple defaults are emitted as arrays.
-- `validate()` checks `prefixItems`, `minItems`, and `maxItems`, so a fixed `tuple` rejects the wrong length and element types. Gemini export uppercases types nested in `prefixItems`.
+- TypedDict `required` follows inheritance, `Required`, and `NotRequired`, including when annotations are postponed. `Annotated` metadata on TypedDict and dataclass fields is preserved.
 
 ## [1.0.1] - 2026-06-28
 
