@@ -43,6 +43,20 @@ def test_add_gemini_snapshot() -> None:
     assert schema(fixtures.add).to_gemini() == _load_snapshot("add_gemini.json")
 
 
+def test_gemini_uppercases_prefix_item_types() -> None:
+    def pair(value: tuple[int, str]) -> None:
+        """Pair two values."""
+
+    prefix = schema(pair).to_gemini()["parameters"]["properties"]["value"]["prefixItems"]
+    assert prefix == [{"type": "INTEGER"}, {"type": "STRING"}]
+
+    def rows(items: list[tuple[int, str]]) -> None:
+        """Rows of pairs."""
+
+    nested = schema(rows).to_gemini()["parameters"]["properties"]["items"]["items"]["prefixItems"]
+    assert nested == [{"type": "INTEGER"}, {"type": "STRING"}]
+
+
 def test_search_github_mcp_snapshot() -> None:
     result = schema(fixtures.search_github).to_mcp()
     assert result == _load_snapshot("search_github_mcp.json")

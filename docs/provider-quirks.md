@@ -19,7 +19,7 @@ This document captures intentional differences between provider adapters.
 
 ## Gemini
 
-- JSON Schema `type` values are uppercased (`STRING`, `INTEGER`, `OBJECT`, ...).
+- JSON Schema `type` values are uppercased (`STRING`, `INTEGER`, `OBJECT`, ...), including types nested under `prefixItems`.
 - Output schemas are not emitted in the Gemini adapter in v0.1; parameters only.
 
 ## Canonical IR

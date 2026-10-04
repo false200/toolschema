@@ -31,6 +31,10 @@ def _convert_type(schema: dict[str, Any]) -> dict[str, Any]:
             result["properties"] = {k: _convert_schema(v) for k, v in value.items()}
         elif key == "items" and isinstance(value, dict):
             result["items"] = _convert_schema(value)
+        elif key == "prefixItems" and isinstance(value, list):
+            result["prefixItems"] = [
+                _convert_schema(item) if isinstance(item, dict) else item for item in value
+            ]
         elif key == "additionalProperties" and isinstance(value, dict):
             result["additionalProperties"] = _convert_schema(value)
         elif key == "anyOf" and isinstance(value, list):
