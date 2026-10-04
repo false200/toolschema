@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import dataclasses
+import json
+from enum import Enum
 from typing import TypedDict
 
 from toolschema import schema
@@ -21,6 +23,16 @@ class PartialPoint(TypedDict, total=False):
 class User:
     name: str
     age: int = 18
+
+
+class _Swatch(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+
+@dataclasses.dataclass
+class _Paint:
+    color: _Swatch = _Swatch.RED
 
 
 def test_typeddict_schema() -> None:
@@ -71,6 +83,19 @@ def test_function_with_typeddict_param() -> None:
     point_schema = tool.parameters["properties"]["point"]
     assert point_schema["type"] == "object"
     assert point_schema["required"] == ["x", "y"]
+
+
+def test_dataclass_enum_default_is_json_value() -> None:
+    result = type_to_schema(_Paint)
+    assert result["properties"]["color"]["default"] == "red"
+    assert type(result["properties"]["color"]["default"]) is str
+    json.dumps(result)
+
+    def use(paint: _Paint) -> str:
+        """Apply a paint."""
+        return paint.color.value
+
+    json.dumps(schema(use).to_mcp())
 
 
 def test_function_with_dataclass_param() -> None:

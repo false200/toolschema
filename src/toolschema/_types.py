@@ -6,6 +6,7 @@ import types
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from toolschema._fields import extract_annotated_metadata, merge_field_into_schema
+from toolschema._schema_utils import json_schema_default
 
 JSON_SCHEMA_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
@@ -62,7 +63,7 @@ def _dataclass_to_schema(tp: type[Any]) -> dict[str, Any]:
         elif field.default is not dataclasses.MISSING:
             properties[field.name] = {
                 **properties[field.name],
-                "default": field.default,
+                "default": json_schema_default(field.default),
             }
     schema: dict[str, Any] = {
         "type": "object",

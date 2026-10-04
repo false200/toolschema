@@ -65,7 +65,7 @@ Annotated[str, "City name"]
 
 ## Defaults
 
-Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`.
+Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`. Enum defaults are written as the member value (`Color.RED` → `"red"`), the same values listed in `enum`. Tuple defaults are written as arrays. Both stay JSON-serializable, and `validate()` can fill an omitted argument.
 
 ```python
 def f(a: int, b: int = 1): ...
