@@ -188,9 +188,38 @@ def _validate_value(
 
     issues = _validate_constraints(value, schema, path)
 
-    if json_type == "array" and "items" in schema and isinstance(value, list):
-        for index, item in enumerate(value):
-            issues.extend(_validate_value(item, schema["items"], path + (index,)))
+    if json_type == "array" and isinstance(value, list):
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if min_items is not None and len(value) < min_items:
+            issues.append(
+                _issue(
+                    f"Array too short (minItems {min_items})",
+                    path=path,
+                    kind=ValidationIssueKind.CONSTRAINT,
+                )
+            )
+        if max_items is not None and len(value) > max_items:
+            issues.append(
+                _issue(
+                    f"Array too long (maxItems {max_items})",
+                    path=path,
+                    kind=ValidationIssueKind.CONSTRAINT,
+                )
+            )
+
+        prefix_items = schema.get("prefixItems")
+        if isinstance(prefix_items, list):
+            for index, item_schema in enumerate(prefix_items):
+                if index < len(value) and isinstance(item_schema, dict):
+                    issues.extend(_validate_value(value[index], item_schema, path + (index,)))
+            items_schema = schema.get("items")
+            if isinstance(items_schema, dict):
+                for index, item in enumerate(value[len(prefix_items) :], start=len(prefix_items)):
+                    issues.extend(_validate_value(item, items_schema, path + (index,)))
+        elif isinstance(schema.get("items"), dict):
+            for index, item in enumerate(value):
+                issues.extend(_validate_value(item, schema["items"], path + (index,)))
 
     if json_type == "object" and isinstance(value, dict):
         properties = schema.get("properties", {})

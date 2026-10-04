@@ -32,6 +32,8 @@ else:
 | `minimum` / `maximum` | Number out of range |
 | `additionalProperties: false` | Extra keys rejected |
 | Nested objects / arrays | Recursive validation |
+| `prefixItems` | `tuple[int, str]` element types |
+| `minItems` / `maxItems` | Tuple shorter or longer than its length |
 | `anyOf` / optional types | At least one branch matches |
 | Defaults | Missing optional fields filled from schema |
 
