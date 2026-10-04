@@ -184,3 +184,58 @@ def test_pydantic_model_duck_type() -> None:
     assert schema["type"] == "object"
     assert schema["properties"]["name"] == {"type": "string"}
     assert schema["properties"]["age"] == {"type": "integer"}
+
+
+def test_pydantic_nested_model_is_inlined() -> None:
+    pytest = __import__("pytest")
+    pydantic = pytest.importorskip("pydantic")
+    from toolschema._types import type_to_schema
+    from toolschema._validate import ValidationFailure, ValidationSuccess
+
+    class Address(pydantic.BaseModel):
+        city: str
+
+    class User(pydantic.BaseModel):
+        name: str
+        address: Address
+        tags: list[Address] = []
+
+    result = type_to_schema(User)
+    encoded = json.dumps(result)
+    assert "$ref" not in encoded
+    assert "$defs" not in result
+    assert "title" not in encoded
+    address = result["properties"]["address"]
+    assert address["properties"]["city"] == {"type": "string"}
+    assert address["required"] == ["city"]
+    assert address["additionalProperties"] is False
+    assert result["properties"]["tags"]["items"]["properties"]["city"] == {"type": "string"}
+
+    def greet(user):
+        """Greet a user."""
+        return user.name
+
+    greet.__annotations__ = {"user": User, "return": str}
+    tool = schema(greet)
+    missing = tool.validate({"user": {"name": "Ada"}})
+    assert isinstance(missing, ValidationFailure)
+    present = tool.validate({"user": {"name": "Ada", "address": {"city": "Paris"}}})
+    assert isinstance(present, ValidationSuccess)
+    assert "$ref" not in json.dumps(tool.to_mcp())
+
+
+def test_pydantic_recursive_model_keeps_defs() -> None:
+    pytest = __import__("pytest")
+    pydantic = pytest.importorskip("pydantic")
+    from toolschema._types import type_to_schema
+
+    class Node(pydantic.BaseModel):
+        name: str
+        child: Node | None = None
+
+    result = type_to_schema(Node)
+    assert result["$ref"] == "#/$defs/Node"
+    node = result["$defs"]["Node"]
+    assert node["properties"]["name"] == {"type": "string"}
+    assert node["additionalProperties"] is False
+    assert "title" not in json.dumps(result)
