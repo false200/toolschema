@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 import fixtures
 
 from toolschema import Field, schema, tool
-from toolschema._validate import ValidationSuccess
+from toolschema._validate import ValidationFailure, ValidationSuccess
 
 
 class _Color(str, Enum):
@@ -184,3 +184,78 @@ def test_pydantic_model_duck_type() -> None:
     assert schema["type"] == "object"
     assert schema["properties"]["name"] == {"type": "string"}
     assert schema["properties"]["age"] == {"type": "integer"}
+
+
+def test_pydantic_nested_model_inlines_refs() -> None:
+    pytest = __import__("pytest")
+    pydantic = pytest.importorskip("pydantic")
+    from toolschema._types import type_to_schema
+
+    class Address(pydantic.BaseModel):
+        city: str
+
+    class User(pydantic.BaseModel):
+        name: str
+        address: Address
+        tags: list[Address]
+
+    result = type_to_schema(User)
+    dumped = json.dumps(result)
+    assert "$ref" not in dumped
+    assert "$defs" not in dumped
+    assert "title" not in dumped
+    assert result["properties"]["address"] == {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"],
+        "additionalProperties": False,
+    }
+    assert result["properties"]["tags"]["items"]["properties"]["city"] == {"type": "string"}
+
+    def save(user: User) -> str:
+        """Save a user."""
+        return user.name
+
+    # The test module postpones annotations, and User is local, so attach the
+    # real class before schema() resolves the signature.
+    save.__annotations__ = {"user": User, "return": str}
+    tool = schema(save)
+    assert "$ref" not in json.dumps(tool.to_openai())
+    assert "$ref" not in json.dumps(tool.to_mcp())
+    assert (
+        tool.to_gemini()["parameters"]["properties"]["user"]["properties"]["address"]["properties"][
+            "city"
+        ]["type"]
+        == "STRING"
+    )
+
+    missing = tool.validate({"user": {"name": "Ada"}})
+    assert isinstance(missing, ValidationFailure)
+    assert any(issue.path == ("user", "address") for issue in missing.issues)
+
+    ok = tool.validate(
+        {"user": {"name": "Ada", "address": {"city": "Paris"}, "tags": [{"city": "Lyon"}]}}
+    )
+    assert isinstance(ok, ValidationSuccess)
+
+    bad_city = tool.validate({"user": {"name": "Ada", "address": {"city": 1}, "tags": []}})
+    assert isinstance(bad_city, ValidationFailure)
+
+
+def test_pydantic_recursive_model_has_no_dangling_ref() -> None:
+    pytest = __import__("pytest")
+    pydantic = pytest.importorskip("pydantic")
+    from toolschema._types import type_to_schema
+
+    class Node(pydantic.BaseModel):
+        value: int
+        child: Node | None = None
+
+    result = type_to_schema(Node)
+    assert "$ref" not in json.dumps(result)
+    assert result["properties"]["value"] == {"type": "integer"}
+    assert result["required"] == ["value"]
+    child = result["properties"]["child"]
+    assert child["default"] is None
+    assert {"type": "object"} in child["anyOf"]
+    assert {"type": "null"} in child["anyOf"]

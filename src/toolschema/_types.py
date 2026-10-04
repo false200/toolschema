@@ -7,7 +7,7 @@ import types
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from toolschema._fields import extract_annotated_metadata, merge_field_into_schema
-from toolschema._schema_utils import json_schema_default
+from toolschema._schema_utils import inline_refs, json_schema_default
 
 JSON_SCHEMA_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
@@ -60,20 +60,35 @@ def _explicit_requiredness(annotation: Any) -> bool | None:
         return None
 
 
-def _normalize_pydantic_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a Pydantic model_json_schema() payload to a property schema."""
-    result = {k: v for k, v in schema.items() if k not in {"$defs", "$schema", "title"}}
-    properties = result.get("properties")
-    if isinstance(properties, dict):
-        result["properties"] = {
-            name: {k: v for k, v in prop.items() if k != "title"}
-            for name, prop in properties.items()
-            if isinstance(prop, dict)
-        }
-    if "properties" in result:
+def _strip_pydantic_noise(schema: Any) -> Any:
+    """Drop Pydantic ``title`` keys and close object schemas."""
+    if isinstance(schema, list):
+        return [_strip_pydantic_noise(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    result = {
+        key: _strip_pydantic_noise(value)
+        for key, value in schema.items()
+        if key not in {"$defs", "$schema", "title"}
+    }
+    if isinstance(result.get("properties"), dict):
         result.setdefault("type", "object")
         result.setdefault("additionalProperties", False)
     return result
+
+
+def _normalize_pydantic_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a Pydantic ``model_json_schema()`` payload to a property schema.
+
+    Nested models are ``$ref`` pointers into a root ``$defs`` map. This object
+    is later placed under a tool parameter, where ``#/$defs/...`` would point
+    at the wrong document, so the definitions are inlined before ``$defs`` is
+    dropped. A recursive model cannot be fully expanded; the back-edge becomes
+    an unconstrained object instead of a dangling ``$ref``.
+    """
+    if "$defs" in schema or "$ref" in schema:
+        schema = inline_refs(schema, on_cycle="object")
+    return _strip_pydantic_noise(schema)
 
 
 def _is_typeddict(tp: Any) -> bool:

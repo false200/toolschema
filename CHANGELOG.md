@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 
 - Enum parameter and dataclass defaults are emitted as the member value. Plain `Enum` defaults were not JSON-serializable, and `validate()` rejected omitted arguments because the member was not in the value `enum`. Tuple defaults are emitted as arrays.
 - TypedDict `required` follows inheritance, `Required`, and `NotRequired`, including when annotations are postponed. `Annotated` metadata on TypedDict and dataclass fields is preserved.
+- Nested Pydantic models are inlined into the tool schema. Dropping `$defs` had left `$ref` pointers that do not resolve once the model sits under a parameter. Recursive models replace the back-edge with an unconstrained object.
 
 ## [1.0.1] - 2026-06-28
 
