@@ -60,35 +60,42 @@ def _explicit_requiredness(annotation: Any) -> bool | None:
         return None
 
 
-def _strip_pydantic_noise(schema: Any) -> Any:
-    """Drop Pydantic ``title`` keys and close object schemas."""
-    if isinstance(schema, list):
-        return [_strip_pydantic_noise(item) for item in schema]
-    if not isinstance(schema, dict):
-        return schema
-    result = {
-        key: _strip_pydantic_noise(value)
-        for key, value in schema.items()
-        if key not in {"$defs", "$schema", "title"}
-    }
-    if isinstance(result.get("properties"), dict):
+def _normalize_pydantic_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a Pydantic model_json_schema() payload to a property schema.
+
+    Nested models are inlined into the property schema. Circular models keep
+    ``$ref`` together with ``$defs``.
+    """
+    try:
+        resolved = inline_refs(schema)
+    except ValueError:
+        resolved = schema
+    drop = {"$schema", "title"}
+    if "$defs" not in resolved:
+        drop.add("$defs")
+    return _strip_pydantic_node(resolved, drop)
+
+
+def _strip_pydantic_node(schema: dict[str, Any], drop: set[str]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in drop:
+            continue
+        result[key] = _strip_pydantic_value(value, drop)
+    if "properties" in result:
         result.setdefault("type", "object")
         result.setdefault("additionalProperties", False)
     return result
 
 
-def _normalize_pydantic_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a Pydantic ``model_json_schema()`` payload to a property schema.
-
-    Nested models are ``$ref`` pointers into a root ``$defs`` map. This object
-    is later placed under a tool parameter, where ``#/$defs/...`` would point
-    at the wrong document, so the definitions are inlined before ``$defs`` is
-    dropped. A recursive model cannot be fully expanded; the back-edge becomes
-    an unconstrained object instead of a dangling ``$ref``.
-    """
-    if "$defs" in schema or "$ref" in schema:
-        schema = inline_refs(schema, on_cycle="object")
-    return _strip_pydantic_noise(schema)
+def _strip_pydantic_value(value: Any, drop: set[str]) -> Any:
+    if isinstance(value, dict):
+        return _strip_pydantic_node(value, drop)
+    if isinstance(value, list):
+        return [
+            _strip_pydantic_value(item, drop) if isinstance(item, dict) else item for item in value
+        ]
+    return value
 
 
 def _is_typeddict(tp: Any) -> bool:
@@ -113,11 +120,19 @@ def _typeddict_to_schema(tp: type[Any]) -> dict[str, Any]:
     else:
         total = getattr(tp, "__total__", True)
         required_keys = set(hints) if total else set()
+    # Python 3.10's typing.TypedDict can put one key in both
+    # __required_keys__ and __optional_keys__ when a subclass redeclares it
+    # and annotations are postponed. Totality breaks the tie unless a
+    # Required or NotRequired marker is present.
+    optional_keys = set(getattr(tp, "__optional_keys__", ()))
+    own_total = bool(getattr(tp, "__total__", True))
     for name, annotation in hints.items():
         explicit = _explicit_requiredness(annotation)
         if explicit is True:
             required_keys.add(name)
         elif explicit is False:
+            required_keys.discard(name)
+        elif name in optional_keys and not own_total:
             required_keys.discard(name)
     required = [name for name in hints if name in required_keys]
     schema: dict[str, Any] = {

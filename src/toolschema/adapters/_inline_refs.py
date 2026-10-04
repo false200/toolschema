@@ -1,8 +1,4 @@
-"""Re-export ``inline_refs`` from the schema utilities.
-
-The implementation lives in ``toolschema._schema_utils`` so core type mapping
-can flatten ``$ref`` without importing adapters.
-"""
+"""Re-export $ref inlining from the schema utilities used by core and adapters."""
 
 from toolschema._schema_utils import inline_refs
 

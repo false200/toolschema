@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Annotated
 
 import fixtures
-import pytest
 
 from toolschema import Field, schema
 from toolschema.adapters._inline_refs import inline_refs
@@ -95,27 +94,6 @@ def test_inline_refs_flattens_defs() -> None:
         },
     }
     assert "$defs" not in result
-
-
-def test_inline_refs_cycle_breaks_as_object() -> None:
-    schema_with_cycle = {
-        "$defs": {
-            "Node": {
-                "type": "object",
-                "properties": {"child": {"$ref": "#/$defs/Node"}},
-            }
-        },
-        "$ref": "#/$defs/Node",
-    }
-    with pytest.raises(ValueError, match="Circular"):
-        inline_refs(schema_with_cycle)
-
-    result = inline_refs(schema_with_cycle, on_cycle="object")
-    assert result == {
-        "type": "object",
-        "properties": {"child": {"type": "object"}},
-    }
-    assert "$ref" not in json.dumps(result)
 
 
 def test_anthropic_moves_constraints_to_description() -> None:

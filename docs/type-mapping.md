@@ -47,7 +47,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 |--------|-------------|
 | `TypedDict` | `object` with `properties`; `required` follows TypedDict rules |
 | `@dataclass` | `object` with fields, defaults, required |
-| Pydantic `BaseModel` | `model_json_schema()` normalized; nested models are inlined |
+| Pydantic `BaseModel` | `model_json_schema()`, with nested models inlined. Circular models keep `$ref` and `$defs`. |
 
 `TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints).
 
