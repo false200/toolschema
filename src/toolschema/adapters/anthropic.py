@@ -50,12 +50,24 @@ def _adapt_property(prop: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _adapt_input_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    result = strip_canonical_meta(schema)
-    properties = result.get("properties")
-    if isinstance(properties, dict):
-        result["properties"] = {k: _adapt_property(v) for k, v in properties.items()}
+def _adapt_schema(schema: Any) -> Any:
+    if isinstance(schema, list):
+        return [_adapt_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    result = _adapt_property(schema)
+    for key, value in list(result.items()):
+        if key in {"properties", "$defs"} and isinstance(value, dict):
+            result[key] = {name: _adapt_schema(child) for name, child in value.items()}
+        elif key in {"items", "additionalProperties"} and isinstance(value, dict):
+            result[key] = _adapt_schema(value)
+        elif key in {"anyOf", "oneOf", "allOf", "prefixItems"} and isinstance(value, list):
+            result[key] = [_adapt_schema(item) for item in value]
     return result
+
+
+def _adapt_input_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    return _adapt_schema(strip_canonical_meta(schema))
 
 
 def to_anthropic(tool: ToolDefinition) -> dict[str, Any]:

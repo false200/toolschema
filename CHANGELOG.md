@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Generated schemas stay JSON-serializable and safe to validate more than once. List and dict defaults are copied. Sets, datetimes, dates, times, decimals, UUIDs, paths, bytes, and `Literal` enum members are written as JSON values. `tuple[()]` is an empty array. A plain function can take a parameter named `self`.
+- `list`, `set`, `frozenset`, `Sequence`, `Mapping[str, T]`, `bytes`, `NewType`, `Final`, and `NamedTuple` map to JSON Schema instead of raising `TypeError`.
+- Circular Pydantic models keep `$ref` and `$defs` on the schema document that contains them, so `#/$defs/Name` resolves for parameters and list items. `validate()` follows those references. `to_mcp()` keeps a circular reference instead of failing.
+- `validate()` uses JSON equality for `enum` (`True` is not `1`), checks `multipleOf`, `uniqueItems`, `format` (`date-time`, `date`, `time`, `uuid`), and type arrays. A bad `pattern` is reported instead of raising. Nested defaults, including dataclass fields, are filled with their own copies.
+- Gemini enum and `Literal` properties include a type. Anthropic constraint text is applied inside nested properties, items, and unions.
 - `validate()` honors JSON Schema `const`. Pydantic emits `const` for a single-value `Literal`, so a discriminated-union arm was accepted when only the tag was wrong. Booleans stay distinct from numbers.
 - Enum parameter and dataclass defaults are emitted as the member value. Plain `Enum` defaults were not JSON-serializable, and `validate()` rejected omitted arguments because the member was not in the value `enum`. Tuple defaults are emitted as arrays.
 - TypedDict `required` follows inheritance, `Required`, and `NotRequired`, including when annotations are postponed. `Annotated` metadata on TypedDict and dataclass fields is preserved.

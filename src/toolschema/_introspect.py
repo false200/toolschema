@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, get_type_hints
 
 from toolschema._ir import ToolDefinition
-from toolschema._schema_utils import json_schema_default
+from toolschema._schema_utils import hoist_defs, json_schema_default
 from toolschema._types import JSON_SCHEMA_2020_12, type_to_schema
 
 
@@ -33,6 +33,26 @@ def _parse_docstring_description(doc: str | None) -> str:
     return paragraphs[0].strip().replace("\n", " ")
 
 
+def _is_receiver(fn: Callable[..., Any], name: str, index: int, param: inspect.Parameter) -> bool:
+    """Return whether this parameter is the implicit ``self`` or ``cls``.
+
+    A plain function may take a real argument named ``self``. Only the first
+    positional parameter of a function defined in a class body is dropped.
+    """
+    if index != 0 or name not in {"self", "cls"}:
+        return False
+    positional = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+    if param.kind not in positional:
+        return False
+    parts = getattr(fn, "__qualname__", "").split(".")
+    if len(parts) < 2:
+        return False
+    return parts[-2] != "<locals>"
+
+
 def _build_parameters_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     hints = get_type_hints(fn, include_extras=True)
     sig = inspect.signature(fn)
@@ -40,10 +60,10 @@ def _build_parameters_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     required: list[str] = []
 
-    for name, param in sig.parameters.items():
+    for index, (name, param) in enumerate(sig.parameters.items()):
         if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
             continue
-        if name in ("self", "cls"):
+        if _is_receiver(fn, name, index, param):
             continue
 
         annotation = hints.get(name, Any)
@@ -64,7 +84,7 @@ def _build_parameters_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     }
     if required:
         schema["required"] = required
-    return schema
+    return hoist_defs(schema)
 
 
 def _build_output_schema(fn: Callable[..., Any]) -> dict[str, Any] | None:

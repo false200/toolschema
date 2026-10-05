@@ -38,10 +38,36 @@ def _convert_type(schema: dict[str, Any]) -> dict[str, Any]:
         elif key == "additionalProperties" and isinstance(value, dict):
             result["additionalProperties"] = _convert_schema(value)
         elif key == "anyOf" and isinstance(value, list):
-            result["anyOf"] = [_convert_schema(item) for item in value]
+            result["anyOf"] = [
+                _convert_schema(item) if isinstance(item, dict) else item for item in value
+            ]
+        elif key == "$defs" and isinstance(value, dict):
+            result["$defs"] = {
+                name: _convert_schema(item) if isinstance(item, dict) else item
+                for name, item in value.items()
+            }
         else:
             result[key] = value
+    enum_values = result.get("enum")
+    if "type" not in result and isinstance(enum_values, list):
+        inferred = _enum_type(enum_values)
+        if inferred is not None:
+            result["type"] = inferred
     return result
+
+
+def _enum_type(values: list[Any]) -> str | None:
+    if not values:
+        return None
+    if all(isinstance(value, str) for value in values):
+        return "STRING"
+    if all(isinstance(value, bool) for value in values):
+        return "BOOLEAN"
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return "INTEGER"
+    if all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+        return "NUMBER"
+    return None
 
 
 def _convert_schema(schema: dict[str, Any]) -> dict[str, Any]:

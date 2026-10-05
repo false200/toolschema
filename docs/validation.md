@@ -26,7 +26,11 @@ else:
 |-------|---------|
 | Required fields | Missing `name` when required |
 | JSON types | `"abc"` for `integer` param |
-| `enum` / `Literal` | Value not in allowed set |
+| `enum` / `Literal` | Value not in allowed set (`True` is not `1`) |
+| `multipleOf` | Integer or number not a multiple |
+| `uniqueItems` | Duplicate array items |
+| `format` | `date`, `date-time`, `time`, `uuid` |
+| `#/$defs/` `$ref` | Local reference target, including circular models |
 | `const` | Value differs from the constant (Pydantic single-value `Literal`) |
 | `minLength` / `maxLength` | String too short |
 | `pattern` | Regex mismatch |
@@ -36,7 +40,7 @@ else:
 | `prefixItems` | `tuple[int, str]` element types |
 | `minItems` / `maxItems` | Tuple shorter or longer than its length |
 | `anyOf` / optional types | At least one branch matches, then sibling keywords are checked |
-| Defaults | Missing optional fields filled from schema |
+| Defaults | Missing optional fields filled from schema, including nested objects |
 
 `Annotated[str | None, Field(min_length=1)]` puts `minLength` next to `anyOf`, not inside the string branch. `validate()` still rejects `""`. `None` stays valid, because `minLength` applies only to strings.
 
@@ -90,7 +94,7 @@ result = standard["validate"]({"name": "Ada"})
 
 ## Limitations (v1.0)
 
-- No `$ref` resolution at validate time (schemas are usually inline)
+- `$ref` is resolved only for local `#/$defs/` pointers. Other reference formats are rejected.
 - No `format` keyword (email, uri, etc.)
 - No `oneOf` discrimination beyond trying each branch
 - Not a replacement for Pydantic `model_validate`
