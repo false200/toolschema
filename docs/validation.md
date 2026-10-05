@@ -27,6 +27,7 @@ else:
 | Required fields | Missing `name` when required |
 | JSON types | `"abc"` for `integer` param |
 | `enum` / `Literal` | Value not in allowed set |
+| `const` | Value must equal the constant (`Literal` fields on Pydantic models) |
 | `minLength` / `maxLength` | String too short |
 | `pattern` | Regex mismatch |
 | `minimum` / `maximum` | Number out of range |
@@ -72,6 +73,7 @@ ValidationFailure(
 | `REQUIRED` | Missing required property |
 | `TYPE` | Wrong JSON type |
 | `ENUM` | Not in enum |
+| `CONST` | Not equal to `const` |
 | `CONSTRAINT` | minLength, pattern, min/max, etc. |
 | `ADDITIONAL_PROPERTY` | Extra key when not allowed |
 

@@ -10,6 +10,7 @@ class ValidationIssueKind(str, Enum):
     REQUIRED = "required"
     TYPE = "type"
     ENUM = "enum"
+    CONST = "const"
     CONSTRAINT = "constraint"
     ADDITIONAL_PROPERTY = "additional_property"
 
@@ -61,6 +62,27 @@ def _type_name(value: Any) -> str:
     if isinstance(value, dict):
         return "object"
     return type(value).__name__
+
+
+def _json_equal(left: Any, right: Any) -> bool:
+    """JSON Schema equality for ``const``.
+
+    Numbers compare numerically, so ``1`` equals ``1.0``. Booleans are not
+    numbers: ``True`` is not ``1``.
+    """
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left is right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _json_equal(item, other) for item, other in zip(left, right, strict=True)
+        )
+    if isinstance(left, dict) and isinstance(right, dict):
+        if left.keys() != right.keys():
+            return False
+        return all(_json_equal(left[key], right[key]) for key in left)
+    return left == right
 
 
 def _matches_type(value: Any, expected: str) -> bool:
@@ -172,6 +194,15 @@ def _validate_value(
         if not rest:
             return []
         return _validate_value(value, rest, path)
+
+    if "const" in schema and not _json_equal(value, schema["const"]):
+        return [
+            _issue(
+                f"Value {value!r} does not match const {schema['const']!r}",
+                path=path,
+                kind=ValidationIssueKind.CONST,
+            )
+        ]
 
     if "enum" in schema and value not in schema["enum"]:
         return [

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated
+import json
+from typing import Annotated, Any
 
 import fixtures
 
@@ -202,6 +203,147 @@ def test_validate_enum_beside_anyof() -> None:
     not_a_string = validate_arguments({"value": 1}, typed)
     assert isinstance(not_a_string, ValidationFailure)
     assert any(issue.kind == ValidationIssueKind.TYPE for issue in not_a_string.issues)
+
+
+def test_validate_const() -> None:
+    """JSON Schema ``const`` is exact equality, with JSON number rules.
+
+    Booleans are not numbers. ``1`` and ``1.0`` are equal.
+    """
+    parameters = {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "a", "type": "string"},
+            "flag": {"const": True},
+            "count": {"type": "number", "const": 1},
+            "pair": {"const": [1, {"ok": False}]},
+        },
+        "required": ["kind"],
+        "additionalProperties": False,
+    }
+
+    ok = validate_arguments(
+        {"kind": "a", "flag": True, "count": 1.0, "pair": [1.0, {"ok": False}]},
+        parameters,
+    )
+    assert isinstance(ok, ValidationSuccess)
+
+    wrong = validate_arguments({"kind": "nope"}, parameters)
+    assert isinstance(wrong, ValidationFailure)
+    assert any(
+        issue.kind is ValidationIssueKind.CONST and issue.path == ("kind",)
+        for issue in wrong.issues
+    )
+
+    boolean = validate_arguments({"kind": "a", "flag": 1, "count": True}, parameters)
+    assert isinstance(boolean, ValidationFailure)
+    assert any(
+        issue.path == ("flag",) and issue.kind is ValidationIssueKind.CONST
+        for issue in boolean.issues
+    )
+    assert any(
+        issue.path == ("count",) and issue.kind is ValidationIssueKind.CONST
+        for issue in boolean.issues
+    )
+
+    pair = validate_arguments({"kind": "a", "pair": [True, {"ok": False}]}, parameters)
+    assert isinstance(pair, ValidationFailure)
+    assert any(
+        issue.path == ("pair",) and issue.kind is ValidationIssueKind.CONST for issue in pair.issues
+    )
+
+
+class _ConstA:
+    @staticmethod
+    def model_json_schema() -> dict[str, Any]:
+        return {
+            "title": "A",
+            "type": "object",
+            "properties": {
+                "kind": {"const": "a", "title": "Kind", "type": "string"},
+                "x": {"title": "X", "type": "integer"},
+            },
+            "required": ["kind", "x"],
+        }
+
+
+class _ConstB:
+    @staticmethod
+    def model_json_schema() -> dict[str, Any]:
+        return {
+            "title": "B",
+            "type": "object",
+            "properties": {
+                "kind": {"const": "b", "title": "Kind", "type": "string"},
+                "y": {"title": "Y", "type": "string"},
+            },
+            "required": ["kind", "y"],
+        }
+
+
+def test_validate_const_on_model_union() -> None:
+    """Pydantic emits ``const`` for Literal fields. A model union must not accept every arm."""
+
+    def take(item: _ConstA | _ConstB) -> str:
+        """Take one variant."""
+        return "ok"
+
+    tool = schema(take)
+    arms = tool.parameters["properties"]["item"]["anyOf"]
+    assert arms[0]["properties"]["kind"]["const"] == "a"
+    assert arms[1]["properties"]["kind"]["const"] == "b"
+    assert "title" not in arms[0]
+
+    assert isinstance(tool.validate({"item": {"kind": "a", "x": 1}}), ValidationSuccess)
+    assert isinstance(tool.validate({"item": {"kind": "b", "y": "hi"}}), ValidationSuccess)
+
+    wrong_kind = tool.validate({"item": {"kind": "nope", "x": 1}})
+    assert isinstance(wrong_kind, ValidationFailure)
+
+    wrong_shape = tool.validate({"item": {"kind": "a", "y": "hi"}})
+    assert isinstance(wrong_shape, ValidationFailure)
+
+    def take_one(item: _ConstA) -> str:
+        """Take the first variant."""
+        return "ok"
+
+    one = schema(take_one)
+    assert one.parameters["properties"]["item"]["properties"]["kind"]["const"] == "a"
+    bad = one.validate({"item": {"kind": "nope", "x": 1}})
+    assert isinstance(bad, ValidationFailure)
+    assert any(
+        issue.kind is ValidationIssueKind.CONST and issue.path == ("item", "kind")
+        for issue in bad.issues
+    )
+    assert isinstance(one.validate({"item": {"kind": "a", "x": 1}}), ValidationSuccess)
+
+
+def test_validate_pydantic_literal_uses_const() -> None:
+    pytest = __import__("pytest")
+    pydantic = pytest.importorskip("pydantic")
+    from typing import Literal
+
+    class LetterA(pydantic.BaseModel):
+        kind: Literal["a"]
+        x: int
+
+    class LetterB(pydantic.BaseModel):
+        kind: Literal["b"]
+        y: str
+
+    def take(item: Any) -> str:
+        """Take one variant."""
+        return ""
+
+    take.__annotations__ = {"item": LetterA | LetterB, "return": str}
+    tool = schema(take)
+    encoded = json.dumps(tool.parameters)
+    assert '"const": "a"' in encoded
+    assert '"const": "b"' in encoded
+    assert isinstance(tool.validate({"item": {"kind": "a", "x": 1}}), ValidationSuccess)
+    assert isinstance(tool.validate({"item": {"kind": "b", "y": "hi"}}), ValidationSuccess)
+    assert isinstance(tool.validate({"item": {"kind": "nope", "x": 1}}), ValidationFailure)
+    assert isinstance(tool.validate({"item": {"kind": "a", "y": "hi"}}), ValidationFailure)
 
 
 def test_validate_complex_constraints() -> None:
