@@ -156,16 +156,22 @@ def _validate_value(
     value: Any, schema: dict[str, Any], path: tuple[str | int, ...] = ()
 ) -> list[ValidationIssue]:
     if "anyOf" in schema:
+        # Applicator keywords do not replace the rest of the schema.
+        # Annotated[str | None, Field(min_length=1)] is anyOf plus minLength;
+        # a string that matches the first branch can still be too short.
         branch_issues = [_validate_value(value, branch, path) for branch in schema["anyOf"]]
-        if any(not branch for branch in branch_issues):
+        if not any(not branch for branch in branch_issues):
+            return [
+                _issue(
+                    f"Value {_type_name(value)!r} does not match anyOf",
+                    path=path,
+                    kind=ValidationIssueKind.TYPE,
+                )
+            ]
+        rest = {key: item for key, item in schema.items() if key != "anyOf"}
+        if not rest:
             return []
-        return [
-            _issue(
-                f"Value {_type_name(value)!r} does not match anyOf",
-                path=path,
-                kind=ValidationIssueKind.TYPE,
-            )
-        ]
+        return _validate_value(value, rest, path)
 
     if "enum" in schema and value not in schema["enum"]:
         return [

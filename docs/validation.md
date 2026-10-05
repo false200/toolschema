@@ -34,8 +34,10 @@ else:
 | Nested objects / arrays | Recursive validation |
 | `prefixItems` | `tuple[int, str]` element types |
 | `minItems` / `maxItems` | Tuple shorter or longer than its length |
-| `anyOf` / optional types | At least one branch matches |
+| `anyOf` / optional types | At least one branch matches, then sibling keywords are checked |
 | Defaults | Missing optional fields filled from schema |
+
+`Annotated[str | None, Field(min_length=1)]` puts `minLength` next to `anyOf`, not inside the string branch. `validate()` still rejects `""`. `None` stays valid, because `minLength` applies only to strings.
 
 ## ValidationSuccess
 
