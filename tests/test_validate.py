@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 import fixtures
 
-from toolschema import schema
-from toolschema._validate import ValidationFailure, ValidationSuccess
+from toolschema import Field, schema
+from toolschema._validate import (
+    ValidationFailure,
+    ValidationIssueKind,
+    ValidationSuccess,
+    validate_arguments,
+)
 
 
 def test_validate_success_with_defaults() -> None:
@@ -95,6 +102,106 @@ def test_validate_variadic_tuple_items() -> None:
     bad = tool.validate({"points": [1, "x"]})
     assert isinstance(bad, ValidationFailure)
     assert any(issue.path == ("points", 1) for issue in bad.issues)
+
+
+def test_validate_constraints_beside_anyof() -> None:
+    """Field constraints on an optional annotation sit next to anyOf.
+
+    JSON Schema applies those sibling keywords in addition to the branch
+    match. ``""`` is a string, and it still violates ``minLength``.
+    """
+
+    def search(
+        query: Annotated[str | None, Field(min_length=1, pattern=r"^[a-z]+$")] = None,
+    ) -> str:
+        """Search."""
+        return query or ""
+
+    tool = schema(search)
+    prop = tool.parameters["properties"]["query"]
+    assert prop["minLength"] == 1
+    assert prop["pattern"] == r"^[a-z]+$"
+    assert "anyOf" in prop
+
+    omitted = tool.validate({})
+    assert isinstance(omitted, ValidationSuccess)
+    assert omitted.value == {"query": None}
+
+    assert isinstance(tool.validate({"query": None}), ValidationSuccess)
+    assert isinstance(tool.validate({"query": "ab"}), ValidationSuccess)
+
+    empty = tool.validate({"query": ""})
+    assert isinstance(empty, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.CONSTRAINT for issue in empty.issues)
+    assert any(issue.path == ("query",) for issue in empty.issues)
+
+    uppercase = tool.validate({"query": "AB"})
+    assert isinstance(uppercase, ValidationFailure)
+    assert any("pattern" in issue.message for issue in uppercase.issues)
+
+    def set_limit(limit: Annotated[int | None, Field(ge=1, le=10)] = None) -> int:
+        """Set a limit."""
+        return limit or 0
+
+    limits = schema(set_limit)
+    assert isinstance(limits.validate({"limit": None}), ValidationSuccess)
+    assert isinstance(limits.validate({"limit": 1}), ValidationSuccess)
+    assert isinstance(limits.validate({"limit": 10}), ValidationSuccess)
+    low = limits.validate({"limit": 0})
+    assert isinstance(low, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.CONSTRAINT for issue in low.issues)
+    high = limits.validate({"limit": 11})
+    assert isinstance(high, ValidationFailure)
+
+    def on_branch(
+        query: Annotated[str, Field(min_length=1)] | None = None,
+    ) -> str:
+        """Search with the constraint inside the string branch."""
+        return query or ""
+
+    branched = schema(on_branch)
+    assert isinstance(branched.validate({"query": ""}), ValidationFailure)
+    assert isinstance(branched.validate({"query": None}), ValidationSuccess)
+
+
+def test_validate_enum_beside_anyof() -> None:
+    parameters = {
+        "type": "object",
+        "properties": {
+            "value": {
+                "anyOf": [{"type": "string"}, {"type": "integer"}],
+                "enum": ["a", 1],
+            }
+        },
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+
+    assert isinstance(validate_arguments({"value": "a"}, parameters), ValidationSuccess)
+    assert isinstance(validate_arguments({"value": 1}, parameters), ValidationSuccess)
+
+    rejected = validate_arguments({"value": "b"}, parameters)
+    assert isinstance(rejected, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.ENUM for issue in rejected.issues)
+
+    wrong_type = validate_arguments({"value": True}, parameters)
+    assert isinstance(wrong_type, ValidationFailure)
+
+    typed = {
+        "type": "object",
+        "properties": {
+            "value": {
+                "anyOf": [{"minLength": 1}],
+                "type": "string",
+            }
+        },
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"value": "ab"}, typed), ValidationSuccess)
+    not_a_string = validate_arguments({"value": 1}, typed)
+    assert isinstance(not_a_string, ValidationFailure)
+    assert any(issue.kind == ValidationIssueKind.TYPE for issue in not_a_string.issues)
 
 
 def test_validate_complex_constraints() -> None:
