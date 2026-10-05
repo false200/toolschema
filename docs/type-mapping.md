@@ -19,11 +19,15 @@ Implemented in `toolschema._types.type_to_schema()`.
 
 | Python | JSON Schema |
 |--------|-------------|
-| `list[T]` | `{"type": "array", "items": schema(T)}` |
-| `dict[str, T]` | `{"type": "object", "additionalProperties": schema(T)}` |
+| `list[T]` / `Sequence[T]` | `{"type": "array", "items": schema(T)}` |
+| `list` (bare) | `{"type": "array"}` |
+| `set[T]` / `frozenset[T]` | `{"type": "array", "items": schema(T), "uniqueItems": true}` |
+| `dict[str, T]` / `Mapping[str, T]` | `{"type": "object", "additionalProperties": schema(T)}` |
 | `dict` (bare) | `{"type": "object"}` |
 | `tuple[A, B, C]` | `{"type": "array", "prefixItems": [...], "minItems": 3, "maxItems": 3}` |
+| `tuple[()]` | `{"type": "array", "maxItems": 0}` |
 | `tuple[T, ...]` | `{"type": "array", "items": schema(T)}` |
+| `bytes` | `{"type": "string", "contentEncoding": "base64"}` |
 
 ## Unions and optionals
 
@@ -39,7 +43,10 @@ Implemented in `toolschema._types.type_to_schema()`.
 |--------|-------------|
 | `Literal["a", "b"]` | `{"enum": ["a", "b"]}` |
 | `Literal[1, 2]` | `{"enum": [1, 2]}` |
+| `Literal[Color.RED]` | `{"enum": ["red"]}` (the member value) |
 | `class Color(str, Enum)` | `{"enum": ["red", "green", ...]}` |
+| `NewType("UserId", str)` | schema of `str` |
+| `Final[int]` | schema of `int` |
 
 ## Structured types
 
@@ -47,7 +54,8 @@ Implemented in `toolschema._types.type_to_schema()`.
 |--------|-------------|
 | `TypedDict` | `object` with `properties`; `required` follows TypedDict rules |
 | `@dataclass` | `object` with fields, defaults, required |
-| Pydantic `BaseModel` | `model_json_schema()`, with nested models inlined. Circular models keep `$ref` and `$defs`. |
+| `NamedTuple` | `object` with fields, defaults, required |
+| Pydantic `BaseModel` | `model_json_schema()`, with nested models inlined. Circular models keep `$ref` and `$defs` on the enclosing document so `#/$defs/` resolves. |
 
 `TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints).
 
@@ -67,7 +75,7 @@ Annotated[str, "City name"]
 
 ## Defaults
 
-Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`. Enum defaults are written as the member value (`Color.RED` → `"red"`), the same values listed in `enum`. Tuple defaults are written as arrays. Both stay JSON-serializable, and `validate()` can fill an omitted argument.
+Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`. Enum defaults are written as the member value (`Color.RED` → `"red"`), the same values listed in `enum`. Tuple and set defaults are written as arrays. Datetime, date, time, UUID, path, decimal, and bytes defaults are written as JSON strings or numbers. List and dict defaults are copied, so mutating a filled value does not change the function default or the next `validate()` result. Nested object defaults are filled too.
 
 ```python
 def f(a: int, b: int = 1): ...

@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, datetime, time
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
+from uuid import UUID
+
+from toolschema._schema_utils import copy_json_value
 
 
 class ValidationIssueKind(str, Enum):
@@ -133,14 +138,26 @@ def _validate_constraints(
                     kind=ValidationIssueKind.CONSTRAINT,
                 )
             )
-        if pattern is not None and re.search(pattern, value) is None:
-            issues.append(
-                _issue(
-                    f"String does not match pattern {pattern!r}",
-                    path=path,
-                    kind=ValidationIssueKind.CONSTRAINT,
+        if pattern is not None:
+            try:
+                matched = re.search(pattern, value) is not None
+            except re.error:
+                issues.append(
+                    _issue(
+                        f"Invalid pattern {pattern!r}",
+                        path=path,
+                        kind=ValidationIssueKind.CONSTRAINT,
+                    )
                 )
-            )
+                matched = True
+            if not matched:
+                issues.append(
+                    _issue(
+                        f"String does not match pattern {pattern!r}",
+                        path=path,
+                        kind=ValidationIssueKind.CONSTRAINT,
+                    )
+                )
 
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         minimum = schema.get("minimum")
@@ -175,18 +192,184 @@ def _validate_constraints(
                     kind=ValidationIssueKind.CONSTRAINT,
                 )
             )
+        multiple_of = schema.get("multipleOf")
+        if multiple_of is not None and not _is_multiple(value, multiple_of):
+            issues.append(
+                _issue(
+                    f"Value must be a multiple of {multiple_of}",
+                    path=path,
+                    kind=ValidationIssueKind.CONSTRAINT,
+                )
+            )
+
+    format_name = schema.get("format")
+    if (
+        isinstance(format_name, str)
+        and isinstance(value, str)
+        and not _matches_format(value, format_name)
+    ):
+        issues.append(
+            _issue(
+                f"String does not match format {format_name!r}",
+                path=path,
+                kind=ValidationIssueKind.CONSTRAINT,
+            )
+        )
 
     return issues
 
 
+def _is_multiple(value: int | float, multiple: Any) -> bool:
+    if isinstance(multiple, bool) or not isinstance(multiple, (int, float)) or multiple == 0:
+        return False
+    try:
+        quotient = Decimal(str(value)) / Decimal(str(multiple))
+    except (InvalidOperation, ValueError):
+        return False
+    return quotient == quotient.to_integral_value()
+
+
+def _matches_format(value: str, format_name: str) -> bool:
+    if format_name == "date-time":
+        text = value[:-1] + "+00:00" if value.endswith("Z") else value
+        try:
+            datetime.fromisoformat(text)
+        except ValueError:
+            return False
+        return True
+    if format_name == "date":
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    if format_name == "time":
+        try:
+            time.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    if format_name == "uuid":
+        try:
+            UUID(value)
+        except ValueError:
+            return False
+        return True
+    return True
+
+
+def _schema_types(schema: dict[str, Any]) -> list[str]:
+    json_type = schema.get("type")
+    if isinstance(json_type, str):
+        return [json_type]
+    if isinstance(json_type, list):
+        return [item for item in json_type if isinstance(item, str)]
+    return []
+
+
+def _enum_contains(value: Any, options: list[Any]) -> bool:
+    return any(_json_equal(value, option) for option in options)
+
+
+def _root_defs(schema: dict[str, Any]) -> dict[str, Any]:
+    defs = schema.get("$defs")
+    return defs if isinstance(defs, dict) else {}
+
+
+def _with_defaults(
+    value: Any,
+    schema: dict[str, Any],
+    defs: dict[str, Any] | None = None,
+    seen: frozenset[tuple[str, int]] = frozenset(),
+) -> Any:
+    """Copy ``value`` and fill nested defaults from ``schema``."""
+    if defs is None:
+        defs = _root_defs(schema)
+    if "$ref" in schema:
+        ref = schema["$ref"]
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            token = (ref, id(value))
+            target = defs.get(ref.removeprefix("#/$defs/"))
+            if token not in seen and isinstance(target, dict):
+                return _with_defaults(value, target, defs, seen | {token})
+        return value
+    if "anyOf" in schema and isinstance(schema.get("anyOf"), list):
+        for branch in schema["anyOf"]:
+            if isinstance(branch, dict) and not _validate_value(value, branch, defs=defs):
+                return _with_defaults(value, branch, defs, seen)
+        return value
+    object_schema = schema.get("type") == "object" or "object" in _schema_types(schema)
+    if isinstance(value, dict) and (object_schema or "properties" in schema):
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        additional = schema.get("additionalProperties")
+        filled: dict[str, Any] = {}
+        for key, item in value.items():
+            prop = properties.get(key)
+            if isinstance(prop, dict):
+                filled[key] = _with_defaults(item, prop, defs, seen)
+            elif isinstance(additional, dict):
+                filled[key] = _with_defaults(item, additional, defs, seen)
+            else:
+                filled[key] = item
+        for key, prop in properties.items():
+            if key not in filled and isinstance(prop, dict) and "default" in prop:
+                filled[key] = copy_json_value(prop["default"])
+        return filled
+    if isinstance(value, list) and (
+        schema.get("type") == "array"
+        or "array" in _schema_types(schema)
+        or "items" in schema
+        or "prefixItems" in schema
+    ):
+        prefix = schema.get("prefixItems") if isinstance(schema.get("prefixItems"), list) else []
+        items_schema = schema.get("items") if isinstance(schema.get("items"), dict) else None
+        filled_items: list[Any] = []
+        for index, item in enumerate(value):
+            if index < len(prefix) and isinstance(prefix[index], dict):
+                child = prefix[index]
+            else:
+                child = items_schema
+            if isinstance(child, dict):
+                filled_items.append(_with_defaults(item, child, defs, seen))
+            else:
+                filled_items.append(item)
+        return filled_items
+    return value
+
+
 def _validate_value(
-    value: Any, schema: dict[str, Any], path: tuple[str | int, ...] = ()
+    value: Any,
+    schema: dict[str, Any],
+    path: tuple[str | int, ...] = (),
+    defs: dict[str, Any] | None = None,
+    seen: frozenset[tuple[str, int]] = frozenset(),
 ) -> list[ValidationIssue]:
+    if defs is None:
+        defs = _root_defs(schema)
+
+    if "$ref" in schema:
+        ref = schema["$ref"]
+        if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
+            return [_issue(f"Unsupported $ref {ref!r}", path=path)]
+        token = (ref, id(value))
+        if token in seen:
+            return []
+        target = defs.get(ref.removeprefix("#/$defs/"))
+        if not isinstance(target, dict):
+            return [_issue(f"Unresolved $ref {ref!r}", path=path)]
+        issues = _validate_value(value, target, path, defs, seen | {token})
+        rest = {key: item for key, item in schema.items() if key not in {"$ref", "$defs"}}
+        if rest:
+            issues.extend(_validate_value(value, rest, path, defs, seen))
+        return issues
+
     if "anyOf" in schema:
         # Applicator keywords do not replace the rest of the schema.
         # Annotated[str | None, Field(min_length=1)] is anyOf plus minLength;
         # a string that matches the first branch can still be too short.
-        branch_issues = [_validate_value(value, branch, path) for branch in schema["anyOf"]]
+        branch_issues = [
+            _validate_value(value, branch, path, defs, seen) for branch in schema["anyOf"]
+        ]
         if not any(not branch for branch in branch_issues):
             return [
                 _issue(
@@ -198,9 +381,9 @@ def _validate_value(
         rest = {key: item for key, item in schema.items() if key != "anyOf"}
         if not rest:
             return []
-        return _validate_value(value, rest, path)
+        return _validate_value(value, rest, path, defs, seen)
 
-    if "enum" in schema and value not in schema["enum"]:
+    if "enum" in schema and not _enum_contains(value, schema["enum"]):
         return [
             _issue(
                 f"Value {value!r} is not in enum {schema['enum']!r}",
@@ -220,19 +403,22 @@ def _validate_value(
             )
         ]
 
-    json_type = schema.get("type")
-    if json_type and not _matches_type(value, json_type):
+    types = _schema_types(schema)
+    if types and not any(_matches_type(value, expected) for expected in types):
+        expected = schema.get("type")
         return [
             _issue(
-                f"Expected {json_type}, got {_type_name(value)}",
+                f"Expected {expected}, got {_type_name(value)}",
                 path=path,
                 kind=ValidationIssueKind.TYPE,
             )
         ]
 
     issues = _validate_constraints(value, schema, path)
-
-    if json_type == "array" and isinstance(value, list):
+    array_like = isinstance(value, list) and (
+        "array" in types or (not types and ("items" in schema or "prefixItems" in schema))
+    )
+    if array_like:
         min_items = schema.get("minItems")
         max_items = schema.get("maxItems")
         if min_items is not None and len(value) < min_items:
@@ -251,21 +437,34 @@ def _validate_value(
                     kind=ValidationIssueKind.CONSTRAINT,
                 )
             )
+        if schema.get("uniqueItems") is True and _has_duplicate(value):
+            issues.append(
+                _issue(
+                    "Array items must be unique",
+                    path=path,
+                    kind=ValidationIssueKind.CONSTRAINT,
+                )
+            )
 
         prefix_items = schema.get("prefixItems")
         if isinstance(prefix_items, list):
             for index, item_schema in enumerate(prefix_items):
                 if index < len(value) and isinstance(item_schema, dict):
-                    issues.extend(_validate_value(value[index], item_schema, path + (index,)))
+                    issues.extend(
+                        _validate_value(value[index], item_schema, path + (index,), defs, seen)
+                    )
             items_schema = schema.get("items")
             if isinstance(items_schema, dict):
                 for index, item in enumerate(value[len(prefix_items) :], start=len(prefix_items)):
-                    issues.extend(_validate_value(item, items_schema, path + (index,)))
+                    issues.extend(_validate_value(item, items_schema, path + (index,), defs, seen))
         elif isinstance(schema.get("items"), dict):
             for index, item in enumerate(value):
-                issues.extend(_validate_value(item, schema["items"], path + (index,)))
+                issues.extend(_validate_value(item, schema["items"], path + (index,), defs, seen))
 
-    if json_type == "object" and isinstance(value, dict):
+    object_like = isinstance(value, dict) and (
+        "object" in types or (not types and "properties" in schema)
+    )
+    if object_like:
         properties = schema.get("properties", {})
         required = set(schema.get("required", []))
 
@@ -293,16 +492,24 @@ def _validate_value(
                     )
 
         for key, prop_schema in properties.items():
-            if key in value:
-                issues.extend(_validate_value(value[key], prop_schema, path + (key,)))
+            if key in value and isinstance(prop_schema, dict):
+                issues.extend(_validate_value(value[key], prop_schema, path + (key,), defs, seen))
 
         additional = schema.get("additionalProperties")
         if isinstance(additional, dict):
             for key, item in value.items():
                 if key not in properties:
-                    issues.extend(_validate_value(item, additional, path + (key,)))
+                    issues.extend(_validate_value(item, additional, path + (key,), defs, seen))
 
     return issues
+
+
+def _has_duplicate(values: list[Any]) -> bool:
+    for index, item in enumerate(values):
+        for previous in values[:index]:
+            if _json_equal(item, previous):
+                return True
+    return False
 
 
 def validate_arguments(args: Any, parameters_schema: dict[str, Any]) -> ValidationResult:
@@ -317,46 +524,8 @@ def validate_arguments(args: Any, parameters_schema: dict[str, Any]) -> Validati
             )
         )
 
-    if parameters_schema.get("type") != "object":
-        issues = _validate_value(args, parameters_schema)
-        return ValidationFailure(issues=tuple(issues)) if issues else ValidationSuccess(value=args)
-
-    properties = parameters_schema.get("properties", {})
-    required = set(parameters_schema.get("required", []))
-    issues: list[ValidationIssue] = []
-
-    for key in sorted(required):
-        if key not in args:
-            prop_schema = properties.get(key, {})
-            if "default" not in prop_schema:
-                issues.append(
-                    _issue(
-                        f"Missing required property {key!r}",
-                        path=(key,),
-                        kind=ValidationIssueKind.REQUIRED,
-                    )
-                )
-
-    normalized = dict(args)
-    for key, prop_schema in properties.items():
-        if key not in normalized and isinstance(prop_schema, dict) and "default" in prop_schema:
-            normalized[key] = prop_schema["default"]
-
-    if parameters_schema.get("additionalProperties") is False:
-        extra = set(normalized) - set(properties)
-        for key in sorted(extra):
-            issues.append(
-                _issue(
-                    f"Additional property {key!r} is not allowed",
-                    path=(key,),
-                    kind=ValidationIssueKind.ADDITIONAL_PROPERTY,
-                )
-            )
-
-    for key, prop_schema in properties.items():
-        if key in normalized:
-            issues.extend(_validate_value(normalized[key], prop_schema, (key,)))
-
+    normalized = _with_defaults(args, parameters_schema)
+    issues = _validate_value(normalized, parameters_schema)
     if issues:
         return ValidationFailure(issues=tuple(issues))
     return ValidationSuccess(value=normalized)

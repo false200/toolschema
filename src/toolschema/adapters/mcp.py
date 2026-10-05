@@ -7,11 +7,20 @@ from toolschema._schema_utils import strip_canonical_meta
 from toolschema.adapters._inline_refs import inline_refs as resolve_inline_refs
 
 
+def _maybe_inline(schema: dict[str, Any], *, enabled: bool) -> dict[str, Any]:
+    if not enabled:
+        return schema
+    try:
+        return resolve_inline_refs(schema)
+    except ValueError:
+        # Circular models cannot be fully inlined. The remaining ``$ref``
+        # values point at ``$defs`` on this same document.
+        return schema
+
+
 def to_mcp(tool: ToolDefinition, *, inline_refs: bool = True) -> dict[str, Any]:
     """Convert ToolDefinition to MCP tools/list format."""
-    input_schema = strip_canonical_meta(tool.parameters)
-    if inline_refs:
-        input_schema = resolve_inline_refs(input_schema)
+    input_schema = _maybe_inline(strip_canonical_meta(tool.parameters), enabled=inline_refs)
 
     result: dict[str, Any] = {
         "name": tool.name,
@@ -20,9 +29,7 @@ def to_mcp(tool: ToolDefinition, *, inline_refs: bool = True) -> dict[str, Any]:
     }
 
     if tool.output is not None:
-        output_schema = strip_canonical_meta(tool.output)
-        if inline_refs:
-            output_schema = resolve_inline_refs(output_schema)
+        output_schema = _maybe_inline(strip_canonical_meta(tool.output), enabled=inline_refs)
         result["outputSchema"] = output_schema
 
     return result

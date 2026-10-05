@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import dataclasses
 import enum
 import importlib
@@ -7,7 +8,7 @@ import types
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from toolschema._fields import extract_annotated_metadata, merge_field_into_schema
-from toolschema._schema_utils import inline_refs, json_schema_default
+from toolschema._schema_utils import hoist_defs, inline_refs, json_schema_default
 
 JSON_SCHEMA_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
@@ -36,6 +37,44 @@ def _load_marker_groups() -> tuple[frozenset[Any], frozenset[Any], frozenset[Any
 
 _REQUIRED_MARKERS, _NOT_REQUIRED_MARKERS, _READONLY_MARKERS = _load_marker_groups()
 _REQUIREDNESS_MARKERS = _REQUIRED_MARKERS | _NOT_REQUIRED_MARKERS | _READONLY_MARKERS
+
+
+def _load_final_markers() -> frozenset[Any]:
+    found: set[Any] = set()
+    for module_name in ("typing", "typing_extensions"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        marker = getattr(module, "Final", None)
+        if marker is not None:
+            found.add(marker)
+    return frozenset(found)
+
+
+_FINAL_MARKERS = _load_final_markers()
+_SEQUENCE_ORIGINS = frozenset(
+    {
+        list,
+        collections_abc.Sequence,
+        collections_abc.MutableSequence,
+    }
+)
+_SET_ORIGINS = frozenset(
+    {
+        set,
+        frozenset,
+        collections_abc.Set,
+        collections_abc.MutableSet,
+    }
+)
+_MAPPING_ORIGINS = frozenset(
+    {
+        dict,
+        collections_abc.Mapping,
+        collections_abc.MutableMapping,
+    }
+)
 
 
 def _explicit_requiredness(annotation: Any) -> bool | None:
@@ -114,7 +153,7 @@ def _typeddict_to_schema(tp: type[Any]) -> dict[str, Any]:
     # sees a string and falls back to `total`), so explicit markers on the
     # resolved hints override it.
     hints = get_type_hints(tp, include_extras=True)
-    properties = {name: type_to_schema(annotation) for name, annotation in hints.items()}
+    properties = {name: _type_to_schema(annotation) for name, annotation in hints.items()}
     if hasattr(tp, "__required_keys__"):
         required_keys = set(tp.__required_keys__)
     else:
@@ -151,7 +190,7 @@ def _dataclass_to_schema(tp: type[Any]) -> dict[str, Any]:
     required: list[str] = []
     for field in dataclasses.fields(tp):
         annotation = hints.get(field.name, Any)
-        properties[field.name] = type_to_schema(annotation)
+        properties[field.name] = _type_to_schema(annotation)
         if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
             required.append(field.name)
         elif field.default is not dataclasses.MISSING:
@@ -169,19 +208,68 @@ def _dataclass_to_schema(tp: type[Any]) -> dict[str, Any]:
     return schema
 
 
+def _is_namedtuple(tp: Any) -> bool:
+    return (
+        isinstance(tp, type)
+        and issubclass(tp, tuple)
+        and hasattr(tp, "_fields")
+        and hasattr(tp, "_field_defaults")
+    )
+
+
+def _namedtuple_to_schema(tp: type[Any]) -> dict[str, Any]:
+    hints = get_type_hints(tp, include_extras=True)
+    defaults = getattr(tp, "_field_defaults", {})
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for name in tp._fields:
+        properties[name] = _type_to_schema(hints.get(name, Any))
+        if name in defaults:
+            properties[name] = {
+                **properties[name],
+                "default": json_schema_default(defaults[name]),
+            }
+        else:
+            required.append(name)
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+    if required:
+        schema["required"] = required
+    return schema
+
+
+def _array_schema(item_type: Any, *, unique: bool = False) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": "array", "items": _type_to_schema(item_type)}
+    if unique:
+        schema["uniqueItems"] = True
+    return schema
+
+
 def type_to_schema(tp: Any) -> dict[str, Any]:
-    """Convert a Python type annotation to a JSON Schema 2020-12 fragment."""
+    """Convert a Python type annotation to a JSON Schema 2020-12 fragment.
+
+    ``$defs`` are lifted to this fragment so ``#/$defs/`` still resolves when
+    the fragment is used on its own. Callers that embed it in a larger
+    document have to hoist again.
+    """
+    return hoist_defs(_type_to_schema(tp))
+
+
+def _type_to_schema(tp: Any) -> dict[str, Any]:
     origin = get_origin(tp)
     args = get_args(tp)
 
-    if origin in _REQUIREDNESS_MARKERS:
+    if origin in _FINAL_MARKERS or origin in _REQUIREDNESS_MARKERS:
         if not args:
             raise TypeError(f"Unsupported type annotation: {tp!r}")
-        return type_to_schema(args[0])
+        return _type_to_schema(args[0])
 
     if origin is Annotated:
         base_type, extras = extract_annotated_metadata(args)
-        schema = type_to_schema(base_type)
+        schema = _type_to_schema(base_type)
         return merge_field_into_schema(schema, extras)
 
     if origin is Union or isinstance(tp, types.UnionType):
@@ -189,9 +277,9 @@ def type_to_schema(tp: Any) -> dict[str, Any]:
         if not non_none:
             return {"type": "null"}
         if len(non_none) == 1 and type(None) in args:
-            inner = type_to_schema(non_none[0])
+            inner = _type_to_schema(non_none[0])
             return {"anyOf": [inner, {"type": "null"}]}
-        schemas = [type_to_schema(a) for a in args if a is not type(None)]
+        schemas = [_type_to_schema(a) for a in args if a is not type(None)]
         if type(None) in args:
             schemas.append({"type": "null"})
         if len(schemas) == 1:
@@ -200,42 +288,39 @@ def type_to_schema(tp: Any) -> dict[str, Any]:
 
     if origin is tuple:
         if len(args) == 2 and args[1] is Ellipsis:
-            return {"type": "array", "items": type_to_schema(args[0])}
+            return {"type": "array", "items": _type_to_schema(args[0])}
         if args:
             return {
                 "type": "array",
-                "prefixItems": [type_to_schema(arg) for arg in args],
+                "prefixItems": [_type_to_schema(arg) for arg in args],
                 "minItems": len(args),
                 "maxItems": len(args),
             }
-        return {"type": "array"}
+        return {"type": "array", "maxItems": 0}
 
-    if origin is list:
+    if origin in _SEQUENCE_ORIGINS:
         item_type = args[0] if args else Any
-        return {"type": "array", "items": type_to_schema(item_type)}
+        return _array_schema(item_type)
 
-    if origin is dict:
+    if origin in _SET_ORIGINS:
+        item_type = args[0] if args else Any
+        return _array_schema(item_type, unique=True)
+
+    if origin in _MAPPING_ORIGINS:
         if len(args) == 2 and args[0] is str:
             return {
                 "type": "object",
-                "additionalProperties": type_to_schema(args[1]),
+                "additionalProperties": _type_to_schema(args[1]),
             }
         if not args:
             return {"type": "object"}
-        raise TypeError(f"Unsupported dict type (only dict[str, T] supported): {tp!r}")
+        raise TypeError(f"Unsupported mapping type (only str keys are supported): {tp!r}")
 
     if origin is Literal:
-        values = list(args)
-        if all(isinstance(v, str) for v in values):
-            return {"enum": values}
-        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
-            return {"enum": values}
-        if all(isinstance(v, bool) for v in values):
-            return {"enum": values}
-        return {"enum": values}
+        return {"enum": [json_schema_default(value) for value in args]}
 
     if isinstance(tp, type) and issubclass(tp, enum.Enum):
-        return {"enum": [member.value for member in tp]}
+        return {"enum": [json_schema_default(member) for member in tp]}
 
     if isinstance(tp, type) and _is_typeddict(tp):
         return _typeddict_to_schema(tp)
@@ -243,22 +328,35 @@ def type_to_schema(tp: Any) -> dict[str, Any]:
     if isinstance(tp, type) and dataclasses.is_dataclass(tp):
         return _dataclass_to_schema(tp)
 
+    if _is_namedtuple(tp):
+        return _namedtuple_to_schema(tp)
+
     if isinstance(tp, type) and hasattr(tp, "model_json_schema"):
         return _normalize_pydantic_schema(tp.model_json_schema())
 
-    if tp is str:
-        return {"type": "string"}
+    if tp is str or tp is bytes or tp is bytearray:
+        if tp is str:
+            return {"type": "string"}
+        return {"type": "string", "contentEncoding": "base64"}
     if tp is int:
         return {"type": "integer"}
     if tp is float:
         return {"type": "number"}
     if tp is bool:
         return {"type": "boolean"}
-    if tp is dict:
+    if tp is dict or tp is collections_abc.Mapping or tp is collections_abc.MutableMapping:
         return {"type": "object"}
+    if tp is list or tp in (collections_abc.Sequence, collections_abc.MutableSequence):
+        return {"type": "array"}
+    if tp in (set, frozenset, collections_abc.Set, collections_abc.MutableSet):
+        return {"type": "array", "uniqueItems": True}
     if tp is type(None):
         return {"type": "null"}
     if tp is Any:
         return {}
+
+    supertype = getattr(tp, "__supertype__", None)
+    if supertype is not None:
+        return _type_to_schema(supertype)
 
     raise TypeError(f"Unsupported type annotation: {tp!r}")
