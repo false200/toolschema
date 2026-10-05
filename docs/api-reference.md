@@ -179,7 +179,7 @@ Standard Schema protocol. Access via `definition.standard["~standard"]`.
 
 ### `ValidationIssueKind`
 
-`REQUIRED` · `TYPE` · `ENUM` · `CONSTRAINT` · `ADDITIONAL_PROPERTY`
+`REQUIRED` · `TYPE` · `ENUM` · `CONST` · `CONSTRAINT` · `ADDITIONAL_PROPERTY`
 
 ---
 

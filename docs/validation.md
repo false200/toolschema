@@ -27,6 +27,7 @@ else:
 | Required fields | Missing `name` when required |
 | JSON types | `"abc"` for `integer` param |
 | `enum` / `Literal` | Value not in allowed set |
+| `const` | Value differs from the constant (Pydantic single-value `Literal`) |
 | `minLength` / `maxLength` | String too short |
 | `pattern` | Regex mismatch |
 | `minimum` / `maximum` | Number out of range |
@@ -38,6 +39,8 @@ else:
 | Defaults | Missing optional fields filled from schema |
 
 `Annotated[str | None, Field(min_length=1)]` puts `minLength` next to `anyOf`, not inside the string branch. `validate()` still rejects `""`. `None` stays valid, because `minLength` applies only to strings.
+
+`const` uses JSON equality. `true` is not `1`, and `1` matches `1.0` when the schema has no stricter `type`. Object key order does not matter. Pydantic represents `Literal["a"]` as `{"const": "a", "type": "string"}`, so a discriminated-union tag has to match that constant.
 
 ## ValidationSuccess
 
@@ -72,6 +75,7 @@ ValidationFailure(
 | `REQUIRED` | Missing required property |
 | `TYPE` | Wrong JSON type |
 | `ENUM` | Not in enum |
+| `CONST` | Not equal to `const` |
 | `CONSTRAINT` | minLength, pattern, min/max, etc. |
 | `ADDITIONAL_PROPERTY` | Extra key when not allowed |
 
