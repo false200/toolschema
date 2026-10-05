@@ -213,3 +213,209 @@ def test_validate_complex_constraints() -> None:
 
     bad = tool.validate({"query": "", "category": "computers"})
     assert isinstance(bad, ValidationFailure)
+
+
+def test_validate_const_keyword() -> None:
+    """``const`` is an assertion, including when it sits next to ``type``."""
+    parameters = {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "a", "type": "string"},
+        },
+        "required": ["kind"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"kind": "a"}, parameters), ValidationSuccess)
+
+    rejected = validate_arguments({"kind": "nope"}, parameters)
+    assert isinstance(rejected, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.CONST for issue in rejected.issues)
+    assert any(issue.path == ("kind",) for issue in rejected.issues)
+
+    numbered = {
+        "type": "object",
+        "properties": {"n": {"const": 1, "type": "integer"}},
+        "required": ["n"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"n": 1}, numbered), ValidationSuccess)
+    fractional = validate_arguments({"n": 1.0}, numbered)
+    assert isinstance(fractional, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.TYPE for issue in fractional.issues)
+
+    bare_number = {
+        "type": "object",
+        "properties": {"n": {"const": 1}},
+        "required": ["n"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"n": 1.0}, bare_number), ValidationSuccess)
+    boolean = validate_arguments({"n": True}, bare_number)
+    assert isinstance(boolean, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.CONST for issue in boolean.issues)
+
+    flags = {
+        "type": "object",
+        "properties": {"ok": {"const": True, "type": "boolean"}},
+        "required": ["ok"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"ok": True}, flags), ValidationSuccess)
+    assert isinstance(validate_arguments({"ok": 1}, flags), ValidationFailure)
+    assert isinstance(validate_arguments({"ok": False}, flags), ValidationFailure)
+
+    nulls = {
+        "type": "object",
+        "properties": {"value": {"const": None}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"value": None}, nulls), ValidationSuccess)
+    assert isinstance(validate_arguments({"value": "null"}, nulls), ValidationFailure)
+
+    structured = {
+        "type": "object",
+        "properties": {
+            "payload": {"const": {"n": 1, "items": [True, "a"]}},
+        },
+        "required": ["payload"],
+        "additionalProperties": False,
+    }
+    assert isinstance(
+        validate_arguments({"payload": {"items": [True, "a"], "n": 1.0}}, structured),
+        ValidationSuccess,
+    )
+    reordered_array = validate_arguments(
+        {"payload": {"n": 1, "items": ["a", True]}},
+        structured,
+    )
+    assert isinstance(reordered_array, ValidationFailure)
+    integer_for_bool = validate_arguments(
+        {"payload": {"n": 1, "items": [1, "a"]}},
+        structured,
+    )
+    assert isinstance(integer_for_bool, ValidationFailure)
+
+    limited = {
+        "type": "object",
+        "properties": {"name": {"const": "ab", "minLength": 3, "type": "string"}},
+        "required": ["name"],
+        "additionalProperties": False,
+    }
+    too_short = validate_arguments({"name": "ab"}, limited)
+    assert isinstance(too_short, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.CONSTRAINT for issue in too_short.issues)
+
+    tags = {
+        "type": "object",
+        "properties": {
+            "tags": {"type": "array", "items": {"const": "a"}},
+        },
+        "required": ["tags"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"tags": ["a", "a"]}, tags), ValidationSuccess)
+    bad_tag = validate_arguments({"tags": ["a", "b"]}, tags)
+    assert isinstance(bad_tag, ValidationFailure)
+    assert any(issue.path == ("tags", 1) for issue in bad_tag.issues)
+
+
+def test_validate_const_beside_anyof() -> None:
+    parameters = {
+        "type": "object",
+        "properties": {
+            "value": {
+                "anyOf": [{"type": "string"}, {"type": "integer"}],
+                "const": "a",
+            }
+        },
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"value": "a"}, parameters), ValidationSuccess)
+
+    other_string = validate_arguments({"value": "b"}, parameters)
+    assert isinstance(other_string, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.CONST for issue in other_string.issues)
+
+    other_branch = validate_arguments({"value": 1}, parameters)
+    assert isinstance(other_branch, ValidationFailure)
+
+
+def test_validate_const_discriminated_union() -> None:
+    """Pydantic emits ``const`` for a one-value ``Literal`` on each union arm."""
+    parameters = {
+        "type": "object",
+        "properties": {
+            "item": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "a", "type": "string"},
+                            "x": {"type": "integer"},
+                        },
+                        "required": ["kind", "x"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "b", "type": "string"},
+                            "y": {"type": "string"},
+                        },
+                        "required": ["kind", "y"],
+                        "additionalProperties": False,
+                    },
+                ]
+            }
+        },
+        "required": ["item"],
+        "additionalProperties": False,
+    }
+    assert isinstance(
+        validate_arguments({"item": {"kind": "a", "x": 1}}, parameters),
+        ValidationSuccess,
+    )
+    assert isinstance(
+        validate_arguments({"item": {"kind": "b", "y": "hi"}}, parameters),
+        ValidationSuccess,
+    )
+
+    wrong_tag = validate_arguments({"item": {"kind": "nope", "x": 1}}, parameters)
+    assert isinstance(wrong_tag, ValidationFailure)
+
+    other_arm = validate_arguments({"item": {"kind": "a", "y": "hi"}}, parameters)
+    assert isinstance(other_arm, ValidationFailure)
+
+
+def test_validate_pydantic_literal_const() -> None:
+    pytest = __import__("pytest")
+    pydantic = pytest.importorskip("pydantic")
+    from typing import Literal
+
+    class A(pydantic.BaseModel):
+        kind: Literal["a"]
+        x: int
+
+    class B(pydantic.BaseModel):
+        kind: Literal["b"]
+        y: str
+
+    def handle(item: A | B) -> str:
+        """Handle a tagged item."""
+        return item.kind
+
+    handle.__annotations__ = {"item": A | B, "return": str}
+    tool = schema(handle)
+    kind_a = tool.parameters["properties"]["item"]["anyOf"][0]["properties"]["kind"]
+    assert kind_a["const"] == "a"
+
+    assert isinstance(tool.validate({"item": {"kind": "a", "x": 1}}), ValidationSuccess)
+    assert isinstance(tool.validate({"item": {"kind": "b", "y": "hi"}}), ValidationSuccess)
+
+    wrong_tag = tool.validate({"item": {"kind": "nope", "x": 1}})
+    assert isinstance(wrong_tag, ValidationFailure)
+
+    swapped = tool.validate({"item": {"kind": "a", "y": "hi"}})
+    assert isinstance(swapped, ValidationFailure)

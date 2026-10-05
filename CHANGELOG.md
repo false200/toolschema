@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `validate()` honors JSON Schema `const`. Pydantic emits `const` for a single-value `Literal`, so a discriminated-union arm was accepted when only the tag was wrong. Booleans stay distinct from numbers.
 - Enum parameter and dataclass defaults are emitted as the member value. Plain `Enum` defaults were not JSON-serializable, and `validate()` rejected omitted arguments because the member was not in the value `enum`. Tuple defaults are emitted as arrays.
 - TypedDict `required` follows inheritance, `Required`, and `NotRequired`, including when annotations are postponed. `Annotated` metadata on TypedDict and dataclass fields is preserved.
 - A TypedDict key redeclared without `Required` or `NotRequired` follows that class's totality on Python 3.10. Postponed annotations left the key in `__required_keys__`.

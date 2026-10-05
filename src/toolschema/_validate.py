@@ -10,6 +10,7 @@ class ValidationIssueKind(str, Enum):
     REQUIRED = "required"
     TYPE = "type"
     ENUM = "enum"
+    CONST = "const"
     CONSTRAINT = "constraint"
     ADDITIONAL_PROPERTY = "additional_property"
 
@@ -61,6 +62,32 @@ def _type_name(value: Any) -> str:
     if isinstance(value, dict):
         return "object"
     return type(value).__name__
+
+
+def _json_equal(left: Any, right: Any) -> bool:
+    """Return whether two values are equal in the JSON Schema data model.
+
+    Booleans are their own type, so ``True`` is not ``1``. Numbers match by
+    mathematical value, so ``1`` and ``1.0`` are equal. Arrays and objects
+    are compared element by element.
+    """
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _json_equal(item, other) for item, other in zip(left, right, strict=True)
+        )
+    if isinstance(left, dict) and isinstance(right, dict):
+        if set(left) != set(right):
+            return False
+        return all(_json_equal(left[key], right[key]) for key in left)
+    return False
 
 
 def _matches_type(value: Any, expected: str) -> bool:
@@ -179,6 +206,17 @@ def _validate_value(
                 f"Value {value!r} is not in enum {schema['enum']!r}",
                 path=path,
                 kind=ValidationIssueKind.ENUM,
+            )
+        ]
+
+    # ``"const": null`` is a present keyword. ``dict.get`` cannot tell that
+    # apart from a missing key, and Python ``==`` treats ``True`` as ``1``.
+    if "const" in schema and not _json_equal(value, schema["const"]):
+        return [
+            _issue(
+                f"Value {value!r} is not const {schema['const']!r}",
+                path=path,
+                kind=ValidationIssueKind.CONST,
             )
         ]
 
