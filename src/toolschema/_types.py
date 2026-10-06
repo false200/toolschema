@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import collections.abc as collections_abc
+import copy
 import dataclasses
 import enum
 import importlib
 import types
+from contextvars import ContextVar
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from toolschema._fields import extract_annotated_metadata, merge_field_into_schema
@@ -146,7 +148,72 @@ def _is_typeddict(tp: Any) -> bool:
         return isinstance(tp, type) and hasattr(tp, "__annotations__") and hasattr(tp, "__total__")
 
 
+class _StructState:
+    """Names and schemas for structured types currently being converted.
+
+    A type that refers to itself, or to another type still on the stack, cannot
+    be inlined. Those cycles become ``$ref`` plus ``$defs``. A nested type that
+    is not part of a cycle stays inlined, which is what existing schemas emit.
+    """
+
+    def __init__(self) -> None:
+        self.building: dict[Any, str] = {}
+        self.built: dict[Any, dict[str, Any]] = {}
+        self.referenced: set[Any] = set()
+        self.used_names: set[str] = set()
+
+
+_STRUCT_STATE: ContextVar[_StructState | None] = ContextVar("toolschema_struct_state", default=None)
+
+
+def _definition_name(tp: Any, state: _StructState) -> str:
+    base = getattr(tp, "__name__", None)
+    if not isinstance(base, str) or not base:
+        base = "Type"
+    candidate = base
+    index = 2
+    while candidate in state.used_names:
+        candidate = f"{base}_{index}"
+        index += 1
+    state.used_names.add(candidate)
+    return candidate
+
+
+def _structured(tp: Any, build: collections_abc.Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Convert one structured type, emitting ``$ref`` when it is re-entered."""
+    state = _STRUCT_STATE.get()
+    token = None
+    if state is None:
+        state = _StructState()
+        token = _STRUCT_STATE.set(state)
+    try:
+        if tp in state.building:
+            state.referenced.add(tp)
+            return {"$ref": f"#/$defs/{state.building[tp]}"}
+        cached = state.built.get(tp)
+        if cached is not None:
+            return copy.deepcopy(cached)
+        state.building[tp] = _definition_name(tp, state)
+        try:
+            body = build()
+        finally:
+            name = state.building.pop(tp)
+        if tp in state.referenced:
+            result: dict[str, Any] = {"$ref": f"#/$defs/{name}", "$defs": {name: body}}
+        else:
+            result = body
+        state.built[tp] = result
+        return copy.deepcopy(result)
+    finally:
+        if token is not None:
+            _STRUCT_STATE.reset(token)
+
+
 def _typeddict_to_schema(tp: type[Any]) -> dict[str, Any]:
+    return _structured(tp, lambda: _typeddict_body(tp))
+
+
+def _typeddict_body(tp: type[Any]) -> dict[str, Any]:
     # include_extras keeps Annotated/Field. `__total__` is only this class's
     # flag, so inherited required keys live on `__required_keys__`. That set is
     # wrong for Required/NotRequired when annotations are postponed (the runtime
@@ -185,6 +252,10 @@ def _typeddict_to_schema(tp: type[Any]) -> dict[str, Any]:
 
 
 def _dataclass_to_schema(tp: type[Any]) -> dict[str, Any]:
+    return _structured(tp, lambda: _dataclass_body(tp))
+
+
+def _dataclass_body(tp: type[Any]) -> dict[str, Any]:
     hints = get_type_hints(tp, include_extras=True)
     properties: dict[str, Any] = {}
     required: list[str] = []
@@ -218,6 +289,10 @@ def _is_namedtuple(tp: Any) -> bool:
 
 
 def _namedtuple_to_schema(tp: type[Any]) -> dict[str, Any]:
+    return _structured(tp, lambda: _namedtuple_body(tp))
+
+
+def _namedtuple_body(tp: type[Any]) -> dict[str, Any]:
     hints = get_type_hints(tp, include_extras=True)
     defaults = getattr(tp, "_field_defaults", {})
     properties: dict[str, Any] = {}
