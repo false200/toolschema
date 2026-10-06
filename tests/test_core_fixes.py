@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Annotated, Any, Final, Literal, NamedTuple, NewType, TypedDict
 from uuid import UUID
 
+import pytest
+
 from toolschema import Field, schema
 from toolschema._types import type_to_schema
 from toolschema._validate import ValidationFailure, ValidationSuccess, validate_arguments
@@ -304,6 +306,213 @@ def test_circular_refs_resolve_and_colliding_names_are_renamed() -> None:
     bad = tool.validate({"node": {"name": 1}, "other": {"name": 1}})
     assert isinstance(bad, ValidationFailure)
     json.dumps(tool.to_mcp())
+
+
+@dataclasses.dataclass
+class _Tree:
+    name: str
+    child: _Tree | None = None
+
+
+class _TreeDict(TypedDict):
+    name: str
+    child: _TreeDict | None
+
+
+class _TreeTuple(NamedTuple):
+    name: str
+    child: _TreeTuple | None = None
+
+
+@dataclasses.dataclass
+class _Branch:
+    leaf: _Leaf
+
+
+@dataclasses.dataclass
+class _Leaf:
+    branch: _Branch | None = None
+
+
+@dataclasses.dataclass
+class _LeftNode:
+    label: str
+    child: _LeftNode | None = None
+
+
+@dataclasses.dataclass
+class _RightNode:
+    label: int
+    child: _RightNode | None = None
+
+
+@dataclasses.dataclass
+class _Grove:
+    name: str
+    kids: list[_Grove]
+
+
+def test_recursive_structured_types_use_refs() -> None:
+    def walk(node: _Tree, group: _TreeDict, pair: _TreeTuple) -> _Tree:
+        """Walk."""
+        return node
+
+    tool = schema(walk)
+    params = tool.parameters
+    assert params["properties"]["node"]["$ref"] == "#/$defs/_Tree"
+    assert "$defs" not in params["properties"]["node"]
+    child = params["$defs"]["_Tree"]["properties"]["child"]
+    assert child["anyOf"][0]["$ref"] == "#/$defs/_Tree"
+    assert params["properties"]["group"]["$ref"] == "#/$defs/_TreeDict"
+    assert params["$defs"]["_TreeDict"]["properties"]["child"]["anyOf"][0]["$ref"] == (
+        "#/$defs/_TreeDict"
+    )
+    assert params["properties"]["pair"]["$ref"] == "#/$defs/_TreeTuple"
+    assert tool.output is not None
+    assert tool.output["$ref"] == "#/$defs/_Tree"
+
+    present = tool.validate(
+        {
+            "node": {"name": "a", "child": {"name": "b"}},
+            "group": {"name": "g", "child": None},
+            "pair": {"name": "p"},
+        }
+    )
+    assert isinstance(present, ValidationSuccess)
+    assert present.value["node"]["child"] == {"name": "b", "child": None}
+    assert present.value["pair"]["child"] is None
+    assert isinstance(tool.validate({"node": {"name": 1}}), ValidationFailure)
+    json.dumps(tool.to_mcp())
+    json.dumps(tool.to_openai())
+    json.dumps(tool.to_anthropic())
+    json.dumps(tool.to_gemini())
+
+
+def test_repeated_recursive_dataclass_shares_one_definition() -> None:
+    def walk(left: _Tree, right: _Tree) -> None:
+        """Walk."""
+
+    params = schema(walk).parameters
+    assert params["properties"]["left"] == {"$ref": "#/$defs/_Tree"}
+    assert params["properties"]["right"] == {"$ref": "#/$defs/_Tree"}
+    assert list(params["$defs"]) == ["_Tree"]
+
+
+def test_mutually_recursive_dataclasses_resolve() -> None:
+    def walk(branch: _Branch) -> None:
+        """Walk."""
+
+    tool = schema(walk)
+    params = tool.parameters
+    assert params["properties"]["branch"]["$ref"] == "#/$defs/_Branch"
+    leaf = params["$defs"]["_Branch"]["properties"]["leaf"]
+    assert leaf["properties"]["branch"]["anyOf"][0]["$ref"] == "#/$defs/_Branch"
+    ok = tool.validate({"branch": {"leaf": {"name": "missing"}}})
+    assert isinstance(ok, ValidationFailure)
+    ok = tool.validate({"branch": {"leaf": {"branch": None}}})
+    assert isinstance(ok, ValidationSuccess)
+
+
+def test_recursive_dataclasses_with_the_same_name_stay_distinct() -> None:
+    _LeftNode.__name__ = "Node"
+    _RightNode.__name__ = "Node"
+    try:
+
+        def walk(left: _LeftNode, right: _RightNode) -> None:
+            """Walk."""
+
+        tool = schema(walk)
+        params = tool.parameters
+        assert params["properties"]["left"]["$ref"] == "#/$defs/Node"
+        assert params["properties"]["right"]["$ref"] == "#/$defs/Node_2"
+        assert params["$defs"]["Node"]["properties"]["label"]["type"] == "string"
+        assert params["$defs"]["Node_2"]["properties"]["label"]["type"] == "integer"
+        right_child = params["$defs"]["Node_2"]["properties"]["child"]["anyOf"][0]["$ref"]
+        assert right_child == "#/$defs/Node_2"
+        bad = tool.validate(
+            {"left": {"label": "a", "child": None}, "right": {"label": "nope", "child": None}}
+        )
+        assert isinstance(bad, ValidationFailure)
+    finally:
+        _LeftNode.__name__ = "_LeftNode"
+        _RightNode.__name__ = "_RightNode"
+
+
+@dataclasses.dataclass
+class _CycleLeft:
+    other: Any = None
+
+
+@dataclasses.dataclass
+class _CycleRight:
+    self_child: Any = None
+    other: Any = None
+
+
+_CycleLeft.__name__ = "Node"
+_CycleRight.__name__ = "Node"
+_CycleLeft.__annotations__["other"] = _CycleRight | None
+_CycleRight.__annotations__["self_child"] = _CycleRight | None
+_CycleRight.__annotations__["other"] = _CycleLeft | None
+
+
+def test_same_name_cycle_keeps_distinct_definitions() -> None:
+    def walk(node: _CycleLeft) -> None:
+        """Walk."""
+
+    tool = schema(walk)
+    params = tool.parameters
+    assert params["properties"]["node"]["$ref"] == "#/$defs/Node"
+    other = params["$defs"]["Node"]["properties"]["other"]["anyOf"][0]
+    assert other == {"$ref": "#/$defs/Node_2"}
+    right = params["$defs"]["Node_2"]["properties"]
+    assert right["self_child"]["anyOf"][0] == {"$ref": "#/$defs/Node_2"}
+    assert right["other"]["anyOf"][0] == {"$ref": "#/$defs/Node"}
+    ok = tool.validate({"node": {"other": {"self_child": None, "other": None}}})
+    assert isinstance(ok, ValidationSuccess)
+    bad = tool.validate({"node": {"other": 1}})
+    assert isinstance(bad, ValidationFailure)
+
+
+def test_structured_schema_error_does_not_poison_later_calls() -> None:
+    class Mystery:
+        pass
+
+    @dataclasses.dataclass
+    class Bad:
+        value: Any
+
+    # Nested classes are invisible to get_type_hints under postponed annotations.
+    Bad.__annotations__["value"] = Mystery
+
+    def broken(item: Any) -> None:
+        """Broken."""
+
+    broken.__annotations__["item"] = Bad
+
+    with pytest.raises(TypeError):
+        schema(broken)
+    with pytest.raises(TypeError):
+        schema(broken)
+
+    def recover(user: _User) -> None:
+        """Recover."""
+
+    user = schema(recover).parameters["properties"]["user"]
+    assert user["type"] == "object"
+    assert "$ref" not in user
+
+
+def test_recursive_dataclass_list_items_resolve() -> None:
+    def walk(grove: _Grove) -> None:
+        """Walk."""
+
+    tool = schema(walk)
+    items = tool.parameters["$defs"]["_Grove"]["properties"]["kids"]["items"]
+    assert items["$ref"] == "#/$defs/_Grove"
+    ok = tool.validate({"grove": {"name": "root", "kids": [{"name": "child", "kids": []}]}})
+    assert isinstance(ok, ValidationSuccess)
+    assert isinstance(tool.validate({"grove": {"name": "root", "kids": [1]}}), ValidationFailure)
 
 
 def test_pydantic_recursive_model_ref_resolves() -> None:
