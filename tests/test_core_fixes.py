@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Annotated, Any, Final, Literal, NamedTuple, NewType, TypedDict
 from uuid import UUID
 
+import pytest
+
 from toolschema import Field, schema
 from toolschema._types import type_to_schema
 from toolschema._validate import ValidationFailure, ValidationSuccess, validate_arguments
@@ -307,7 +309,6 @@ def test_circular_refs_resolve_and_colliding_names_are_renamed() -> None:
 
 
 def test_pydantic_recursive_model_ref_resolves() -> None:
-    pytest = __import__("pytest")
     pydantic = pytest.importorskip("pydantic")
 
     class Node(pydantic.BaseModel):
@@ -325,3 +326,209 @@ def test_pydantic_recursive_model_ref_resolves() -> None:
     assert isinstance(tool.validate({"node": {"name": 1}}), ValidationFailure)
     present = tool.validate({"node": {"name": "a", "child": {"name": "b", "child": None}}})
     assert isinstance(present, ValidationSuccess)
+
+
+class _AliasField:
+    def __init__(self, alias: str | None) -> None:
+        self.alias = alias
+
+
+class _Person:
+    """Stand-in for a Pydantic model that publishes a validation alias."""
+
+    model_fields = {
+        "full_name": _AliasField("fullName"),
+        "tags": _AliasField(None),
+    }
+
+    def __init__(self, full_name: str, tags: list[str] | None = None) -> None:
+        self.full_name = full_name
+        self.tags = list(tags or [])
+
+    def model_dump(self, mode: str = "python") -> dict[str, Any]:
+        return {"full_name": self.full_name, "tags": list(self.tags)}
+
+    @staticmethod
+    def model_json_schema() -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "fullName": {"type": "string"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["fullName", "tags"],
+        }
+
+
+class _Names:
+    """Stand-in for a Pydantic RootModel whose schema is the root value."""
+
+    __pydantic_root_model__ = True
+
+    def __init__(self, root: list[str]) -> None:
+        self.root = root
+
+    def model_dump(self, mode: str = "python") -> list[str]:
+        return list(self.root)
+
+    @staticmethod
+    def model_json_schema() -> dict[str, Any]:
+        return {"type": "array", "items": {"type": "string"}}
+
+
+@dataclasses.dataclass(frozen=True)
+class _Inner:
+    name: str
+
+
+@dataclasses.dataclass
+class _Bundle:
+    inner: _Inner
+    point: _Point
+    labels: tuple[str, ...] = ("a", "b")
+    color: _Color = _Color.RED
+
+
+def test_structured_instance_defaults_match_object_schemas() -> None:
+    bundle = _Bundle(_Inner("Ada"), _Point(1, "n"), labels=("a", "b"))
+
+    def carry(item: _Bundle = bundle, pair: tuple[int, str] = (2, "b")) -> None:
+        """Carry."""
+
+    tool = schema(carry)
+    props = tool.parameters["properties"]
+    assert props["item"]["default"] == {
+        "inner": {"name": "Ada"},
+        "point": {"x": 1, "y": "n"},
+        "labels": ["a", "b"],
+        "color": "red",
+    }
+    assert props["pair"]["default"] == [2, "b"]
+    json.dumps(tool.to_openai())
+    json.dumps(tool.to_mcp())
+
+    first = tool.validate({})
+    assert isinstance(first, ValidationSuccess)
+    assert first.value["item"]["inner"]["name"] == "Ada"
+    assert first.value["item"]["point"] == {"x": 1, "y": "n"}
+    first.value["item"]["labels"].append("z")
+    second = tool.validate({})
+    assert isinstance(second, ValidationSuccess)
+    assert second.value["item"]["labels"] == ["a", "b"]
+    assert bundle.labels == ("a", "b")
+
+    class _Holder(NamedTuple):
+        bundle: _Bundle
+        n: int = 3
+
+    holder_default = _Holder(bundle)
+
+    def hold(holder: _Holder = holder_default) -> None:
+        """Hold."""
+
+    hold.__annotations__ = {"holder": _Holder, "return": None}
+    held = schema(hold)
+    assert held.parameters["properties"]["holder"]["default"]["n"] == 3
+    assert held.parameters["properties"]["holder"]["default"]["bundle"]["color"] == "red"
+    assert isinstance(held.validate({}), ValidationSuccess)
+
+
+def test_dataclass_field_instance_default_is_json() -> None:
+    @dataclasses.dataclass
+    class _Outer:
+        inner: _Inner = _Inner("Ada")
+        labels: tuple[str, ...] = ("a", "b")
+
+    result = type_to_schema(_Outer)
+    assert result["properties"]["inner"]["default"] == {"name": "Ada"}
+    assert result["properties"]["labels"]["default"] == ["a", "b"]
+    json.dumps(result)
+
+
+def test_model_instance_default_uses_schema_property_names() -> None:
+    person = _Person("Ada", tags=["x"])
+
+    def greet(person: _Person = person) -> None:
+        """Greet."""
+
+    tool = schema(greet)
+    assert tool.parameters["properties"]["person"]["default"] == {
+        "fullName": "Ada",
+        "tags": ["x"],
+    }
+    filled = tool.validate({})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value["person"]["fullName"] == "Ada"
+    filled.value["person"]["tags"].append("z")
+    again = tool.validate({})
+    assert isinstance(again, ValidationSuccess)
+    assert again.value["person"]["tags"] == ["x"]
+    assert person.tags == ["x"]
+
+    names_default = _Names(["b", "a"])
+
+    def collect(names: _Names = names_default) -> None:
+        """Collect."""
+
+    names = schema(collect)
+    assert names.parameters["properties"]["names"]["default"] == ["b", "a"]
+    assert isinstance(names.validate({}), ValidationSuccess)
+
+
+def test_cyclic_defaults_raise_value_error() -> None:
+    @dataclasses.dataclass
+    class _Loop:
+        name: str
+        child: Any = None
+
+    loop = _Loop("a")
+    loop.child = loop
+
+    def walk(node: Any = loop) -> None:
+        """Walk."""
+
+    with pytest.raises(ValueError, match="cyclic"):
+        schema(walk)
+
+    items: list[Any] = []
+    items.append(items)
+
+    def collect(values: list[Any] = items) -> None:
+        """Collect."""
+
+    with pytest.raises(ValueError, match="cyclic"):
+        schema(collect)
+
+
+def test_pydantic_model_instance_default_matches_validation_alias() -> None:
+    pydantic = pytest.importorskip("pydantic")
+
+    class Inner(pydantic.BaseModel):
+        given_name: str = pydantic.Field(alias="givenName")
+
+    class Outer(pydantic.BaseModel):
+        inner: Inner
+        full_name: str = pydantic.Field(alias="fullName", serialization_alias="outName")
+
+    class Names(pydantic.RootModel[list[str]]):
+        pass
+
+    sample_outer = Outer(inner=Inner(givenName="Ada"), fullName="Ada Lovelace")
+    sample_names = Names(["a"])
+
+    def save(outer: Outer = sample_outer, names: Names = sample_names) -> None:
+        """Save."""
+
+    save.__annotations__ = {"outer": Outer, "names": Names, "return": None}
+    tool = schema(save)
+    props = tool.parameters["properties"]
+    assert props["outer"]["default"] == {
+        "inner": {"givenName": "Ada"},
+        "fullName": "Ada Lovelace",
+    }
+    assert "outName" not in props["outer"]["default"]
+    assert props["names"]["default"] == ["a"]
+    json.dumps(tool.parameters)
+    saved = tool.validate({})
+    assert isinstance(saved, ValidationSuccess)
+    assert saved.value["outer"]["fullName"] == "Ada Lovelace"
