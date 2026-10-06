@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- A dataclass, TypedDict, or NamedTuple that refers to itself, or to another structured type in a cycle, no longer raises `RecursionError`. The cycle is emitted as `$ref` and `$defs`, and `validate()` follows that reference. Nested structured types that are not part of a cycle stay inlined.
+- Dataclass, `NamedTuple`, and Pydantic model instance defaults are written as JSON. A `NamedTuple` default was stored as an array, so `validate({})` rejected an omitted argument. A dataclass or model default was not JSON-serializable. Model object keys follow the validation alias used by `model_json_schema()`. A cyclic default raises `ValueError`.
 - Generated schemas stay JSON-serializable and safe to validate more than once. List and dict defaults are copied. Sets, datetimes, dates, times, decimals, UUIDs, paths, bytes, and `Literal` enum members are written as JSON values. `tuple[()]` is an empty array. A plain function can take a parameter named `self`.
 - `list`, `set`, `frozenset`, `Sequence`, `Mapping[str, T]`, `bytes`, `NewType`, `Final`, and `NamedTuple` map to JSON Schema instead of raising `TypeError`.
 - Circular Pydantic models keep `$ref` and `$defs` on the schema document that contains them, so `#/$defs/Name` resolves for parameters and list items. `validate()` follows those references. `to_mcp()` keeps a circular reference instead of failing.
