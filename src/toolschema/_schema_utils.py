@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import dataclasses
 import enum
 import os
 from datetime import date, datetime, time
@@ -16,10 +17,17 @@ def json_schema_default(value: Any) -> Any:
     The result has to be JSON and has to match the values this library puts
     in ``enum``. Containers are always copied so a later ``validate()`` cannot
     mutate the function's default object. Enum members are written as their
-    values. Tuples, sets, and frozensets are written as arrays.
+    values. Tuples, sets, and frozensets are written as arrays. Dataclass and
+    NamedTuple instances are written as objects. Pydantic model instances are
+    written as objects whose keys match ``model_json_schema()``, or as the
+    root value for a root model. A cyclic default raises ``ValueError``.
     """
+    return _json_schema_default(value, frozenset())
+
+
+def _json_schema_default(value: Any, seen: frozenset[int]) -> Any:
     if isinstance(value, enum.Enum):
-        return json_schema_default(value.value)
+        return _json_schema_default(value.value, seen)
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, date):
@@ -43,19 +51,103 @@ def json_schema_default(value: Any) -> Any:
             return bytes(value).decode("utf-8")
         except UnicodeDecodeError:
             return base64.b64encode(bytes(value)).decode("ascii")
-    if isinstance(value, (set, frozenset)):
-        items = [json_schema_default(item) for item in value]
-        try:
-            return sorted(items)
-        except TypeError:
-            return items
-    if isinstance(value, tuple):
-        return [json_schema_default(item) for item in value]
-    if isinstance(value, list):
-        return [json_schema_default(item) for item in value]
-    if isinstance(value, dict):
-        return {key: json_schema_default(item) for key, item in value.items()}
+
+    structured = _structured_default(value, seen)
+    if structured is not _NOT_STRUCTURED:
+        return structured
+
+    if isinstance(value, (set, frozenset, tuple, list, dict)):
+        if id(value) in seen:
+            raise ValueError(f"Cannot serialize cyclic default of type {type(value).__name__}")
+        child_seen = seen | {id(value)}
+        if isinstance(value, (set, frozenset)):
+            items = [_json_schema_default(item, child_seen) for item in value]
+            try:
+                return sorted(items)
+            except TypeError:
+                return items
+        if isinstance(value, tuple):
+            return [_json_schema_default(item, child_seen) for item in value]
+        if isinstance(value, list):
+            return [_json_schema_default(item, child_seen) for item in value]
+        return {key: _json_schema_default(item, child_seen) for key, item in value.items()}
     return value
+
+
+_NOT_STRUCTURED = object()
+
+
+def _structured_default(value: Any, seen: frozenset[int]) -> Any:
+    """Convert a dataclass, NamedTuple, or Pydantic model instance to JSON.
+
+    Returns ``_NOT_STRUCTURED`` when ``value`` is none of those.
+    """
+    if isinstance(value, type):
+        return _NOT_STRUCTURED
+
+    if _is_model_instance(value):
+        return _model_default(value, seen)
+    if dataclasses.is_dataclass(value):
+        return _object_default(
+            value,
+            {field.name: getattr(value, field.name) for field in dataclasses.fields(value)},
+            seen,
+        )
+    if _is_namedtuple_instance(value):
+        return _object_default(
+            value,
+            {name: getattr(value, name) for name in value._fields},
+            seen,
+        )
+    return _NOT_STRUCTURED
+
+
+def _object_default(value: Any, items: dict[str, Any], seen: frozenset[int]) -> dict[str, Any]:
+    if id(value) in seen:
+        raise ValueError(f"Cannot serialize cyclic default of type {type(value).__name__}")
+    child_seen = seen | {id(value)}
+    return {key: _json_schema_default(item, child_seen) for key, item in items.items()}
+
+
+def _is_namedtuple_instance(value: Any) -> bool:
+    return isinstance(value, tuple) and hasattr(value, "_fields") and hasattr(value, "_asdict")
+
+
+def _is_model_instance(value: Any) -> bool:
+    dump = getattr(value, "model_dump", None)
+    schema_fn = getattr(type(value), "model_json_schema", None)
+    return callable(dump) and callable(schema_fn)
+
+
+def _model_default(value: Any, seen: frozenset[int]) -> Any:
+    if id(value) in seen:
+        raise ValueError(f"Cannot serialize cyclic default of type {type(value).__name__}")
+    child_seen = seen | {id(value)}
+    # A root model's schema is the root value (often an array), not an object
+    # with a ``root`` property.
+    if getattr(type(value), "__pydantic_root_model__", False):
+        return _json_schema_default(value.root, child_seen)
+
+    fields = getattr(type(value), "model_fields", None)
+    if isinstance(fields, dict):
+        # ``model_json_schema()`` uses the validation alias. ``model_dump(by_alias=True)``
+        # uses the serialization alias, which is a different name when both are set.
+        properties: dict[str, Any] = {}
+        for name, field in fields.items():
+            try:
+                attr = getattr(value, name)
+            except AttributeError:
+                continue
+            properties[_model_property_name(name, field)] = attr
+        return _object_default(value, properties, seen)
+    return _json_schema_default(value.model_dump(mode="json"), child_seen)
+
+
+def _model_property_name(name: str, field: Any) -> str:
+    alias = getattr(field, "alias", None)
+    if isinstance(alias, str) and alias:
+        return alias
+    return name
 
 
 def copy_json_value(value: Any) -> Any:
