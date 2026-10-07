@@ -323,6 +323,45 @@ def _array_schema(item_type: Any, *, unique: bool = False) -> dict[str, Any]:
     return schema
 
 
+def _is_union(tp: Any) -> bool:
+    return get_origin(tp) is Union or isinstance(tp, types.UnionType)
+
+
+def _includes_none(tp: Any) -> bool:
+    """Return whether this annotation already accepts null."""
+    if tp is type(None):
+        return True
+    if _is_union(tp):
+        return any(_includes_none(arg) for arg in get_args(tp))
+    origin = get_origin(tp)
+    wrappers = _FINAL_MARKERS | _REQUIREDNESS_MARKERS
+    if origin is Annotated or origin in wrappers:
+        args = get_args(tp)
+        return bool(args) and _includes_none(args[0])
+    return False
+
+
+def _collapse_redundant_none(tp: Any) -> Any:
+    """Drop an outer Optional that repeats null already present inside.
+
+    On Python 3.10, postponed evaluation makes ``get_type_hints`` rewrite
+    ``Annotated[str | None, Field(...)]`` as
+    ``Optional[Annotated[str | None, Field(...)]]``. ``Union`` flattening
+    does not remove that wrapper, because ``Annotated`` is not itself a
+    union. The extra branch nests constraints such as ``minLength`` inside
+    ``anyOf``. Python 3.11+ leaves the annotation unchanged.
+    """
+    if not _is_union(tp):
+        return tp
+    args = get_args(tp)
+    if type(None) not in args:
+        return tp
+    non_none = [arg for arg in args if arg is not type(None)]
+    if len(non_none) == 1 and _includes_none(non_none[0]):
+        return non_none[0]
+    return tp
+
+
 def type_to_schema(tp: Any) -> dict[str, Any]:
     """Convert a Python type annotation to a JSON Schema 2020-12 fragment.
 
@@ -334,6 +373,7 @@ def type_to_schema(tp: Any) -> dict[str, Any]:
 
 
 def _type_to_schema(tp: Any) -> dict[str, Any]:
+    tp = _collapse_redundant_none(tp)
     origin = get_origin(tp)
     args = get_args(tp)
 

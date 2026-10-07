@@ -37,6 +37,8 @@ Implemented in `toolschema._types.type_to_schema()`.
 | `T \| None` | `{"anyOf": [schema(T), {"type": "null"}]}` |
 | `Optional[T]` with `= None` | same + `"default": null` |
 
+`Annotated[str | None, Field(min_length=1)]` keeps `minLength` beside `anyOf`. On Python 3.10, postponed annotations make `get_type_hints` wrap that form in another `Optional`. The extra null branch is removed so the schema matches Python 3.11+. `Annotated[str, Field(min_length=1)] | None` is different: `minLength` stays on the string branch.
+
 ## Literals and enums
 
 | Python | JSON Schema |
