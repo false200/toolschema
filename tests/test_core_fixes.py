@@ -119,6 +119,45 @@ def test_invalid_pattern_is_a_validation_issue() -> None:
     assert any("pattern" in issue.message for issue in result.issues)
 
 
+def test_redundant_optional_around_annotated_union_keeps_sibling_constraints() -> None:
+    """An extra Optional around Annotated[T | None, ...] must not nest constraints.
+
+    Python 3.10 get_type_hints rewrites Annotated[str | None, Field(...)] into
+    Optional[Annotated[str | None, Field(...)]]. The direct union is that shape.
+    """
+    wrapped = Annotated[str | None, Field(min_length=1, pattern=r"^[a-z]+$")] | None
+    assert type_to_schema(wrapped) == {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "minLength": 1,
+        "pattern": r"^[a-z]+$",
+    }
+    labeled = Annotated[str | None, "City"] | None
+    assert type_to_schema(labeled) == {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "description": "City",
+    }
+    limited = Annotated[int | None, Field(ge=1, le=10)] | None
+    assert type_to_schema(limited) == {
+        "anyOf": [{"type": "integer"}, {"type": "null"}],
+        "minimum": 1,
+        "maximum": 10,
+    }
+
+    # Constraints on a non-null type stay inside that anyOf branch.
+    inner = Annotated[str, Field(min_length=1)] | None
+    assert type_to_schema(inner) == {
+        "anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}],
+    }
+    # Null nested inside a container is not an extra Optional around the value.
+    container = list[str | None] | None
+    assert type_to_schema(container) == {
+        "anyOf": [
+            {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+            {"type": "null"},
+        ],
+    }
+
+
 def test_common_aliases_and_containers() -> None:
     assert type_to_schema(list) == {"type": "array"}
     assert type_to_schema(set[str])["uniqueItems"] is True
