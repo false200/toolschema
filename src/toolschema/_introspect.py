@@ -33,11 +33,63 @@ def _parse_docstring_description(doc: str | None) -> str:
     return paragraphs[0].strip().replace("\n", " ")
 
 
+def _unwraps_to(candidate: Any, target: Any) -> bool:
+    """Return whether ``candidate`` is ``target`` or wraps it via ``__wrapped__``."""
+    seen: set[int] = set()
+    current = candidate
+    while current is not None and id(current) not in seen:
+        if current is target:
+            return True
+        seen.add(id(current))
+        current = getattr(current, "__wrapped__", None)
+    return False
+
+
+def _defining_class(fn: Callable[..., Any]) -> type | None:
+    """Return the class that defined ``fn``, when that class lives in a module.
+
+    A class created inside a function has ``<locals>`` in its qualified name.
+    The class object cannot be loaded from the module, so the caller falls
+    back to the qualified-name heuristic.
+    """
+    qualname = getattr(fn, "__qualname__", "")
+    if not isinstance(qualname, str):
+        return None
+    parts = qualname.split(".")
+    if len(parts) < 2 or "<locals>" in parts:
+        return None
+    module = inspect.getmodule(fn)
+    if module is None:
+        return None
+    obj: Any = getattr(module, parts[0], None)
+    for part in parts[1:-1]:
+        if not isinstance(obj, type):
+            return None
+        obj = getattr(obj, part, None)
+    if isinstance(obj, type):
+        return obj
+    return None
+
+
+def _defined_member(owner: type, fn: Callable[..., Any]) -> Any | None:
+    """Return the class attribute that is ``fn``, without invoking descriptors."""
+    attr_name = getattr(fn, "__name__", None)
+    if not isinstance(attr_name, str):
+        return None
+    member = inspect.getattr_static(owner, attr_name, None)
+    candidate = member.__func__ if isinstance(member, (staticmethod, classmethod)) else member
+    if _unwraps_to(candidate, fn):
+        return member
+    return None
+
+
 def _is_receiver(fn: Callable[..., Any], name: str, index: int, param: inspect.Parameter) -> bool:
     """Return whether this parameter is the implicit ``self`` or ``cls``.
 
     A plain function may take a real argument named ``self``. Only the first
-    positional parameter of a function defined in a class body is dropped.
+    positional parameter of an instance method or classmethod is dropped.
+    ``staticmethod`` keeps that parameter: it is an ordinary argument, even
+    when it is named ``self`` or ``cls``.
     """
     if index != 0 or name not in {"self", "cls"}:
         return False
@@ -47,6 +99,17 @@ def _is_receiver(fn: Callable[..., Any], name: str, index: int, param: inspect.P
     )
     if param.kind not in positional:
         return False
+    if isinstance(fn, staticmethod):
+        return False
+    if isinstance(fn, classmethod):
+        return True
+
+    owner = _defining_class(fn)
+    if owner is not None:
+        member = _defined_member(owner, fn)
+        if member is not None:
+            return not isinstance(member, staticmethod)
+
     parts = getattr(fn, "__qualname__", "").split(".")
     if len(parts) < 2:
         return False
