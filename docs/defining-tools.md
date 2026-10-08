@@ -84,6 +84,12 @@ Pre-PEP style — description only:
 city: Annotated[str, "City name"]
 ```
 
+## Methods
+
+`schema()` omits the implicit receiver of an instance method or classmethod: the first positional parameter named `self` or `cls`. A plain function may use those names as real arguments.
+
+A `@staticmethod` keeps `self` or `cls`. That parameter is an ordinary argument. This is recognized for a class defined in a module, including a class nested in another class. A staticmethod on a class created inside a function is still treated like a method, because that class cannot be loaded from the function's qualified name.
+
 ## Defaults and required fields
 
 ```python

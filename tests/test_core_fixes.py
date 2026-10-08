@@ -14,7 +14,7 @@ from uuid import UUID
 
 import pytest
 
-from toolschema import Field, schema
+from toolschema import Field, schema, tool
 from toolschema._types import type_to_schema
 from toolschema._validate import ValidationFailure, ValidationSuccess, validate_arguments
 
@@ -257,6 +257,57 @@ def test_nested_dataclass_default_is_filled() -> None:
     assert result.value["user"]["role"] == "admin"
 
 
+class _StaticBox:
+    @staticmethod
+    def run(self: str, /) -> str:
+        """Run."""
+        return self
+
+    @staticmethod
+    def make(cls: int, extra: int = 1) -> int:
+        """Make."""
+        return cls + extra
+
+    def method(self, name: str) -> str:
+        """Method."""
+        return name
+
+    @classmethod
+    def build(cls, name: str) -> str:
+        """Build."""
+        return name
+
+
+class _ChildStaticBox(_StaticBox):
+    pass
+
+
+class _OuterStatic:
+    class Inner:
+        @staticmethod
+        def run(self: str) -> str:
+            """Run."""
+            return self
+
+        def method(self, name: str) -> str:
+            """Method."""
+            return name
+
+
+class _MarkedStatic:
+    @staticmethod
+    @tool
+    def run(self: str) -> str:
+        """Run."""
+        return self
+
+    @tool
+    @staticmethod
+    def other(cls: str) -> str:
+        """Other."""
+        return cls
+
+
 def test_self_parameter_is_kept_on_functions_and_dropped_on_methods() -> None:
     def configure(self: str, value: int) -> None:
         """Configure."""
@@ -271,6 +322,42 @@ def test_self_parameter_is_kept_on_functions_and_dropped_on_methods() -> None:
     properties = schema(Box.run).parameters["properties"]
     assert "self" not in properties
     assert "name" in properties
+
+
+def test_staticmethod_keeps_arguments_named_self_or_cls() -> None:
+    ran = schema(_StaticBox.run).parameters
+    assert ran["properties"]["self"] == {"type": "string"}
+    assert ran["required"] == ["self"]
+
+    made = schema(_StaticBox.make).parameters
+    assert made["properties"]["cls"] == {"type": "integer"}
+    assert made["properties"]["extra"] == {"type": "integer", "default": 1}
+    assert made["required"] == ["cls"]
+
+    method = schema(_StaticBox.method).parameters["properties"]
+    assert "self" not in method
+    assert "name" in method
+
+    built = schema(_StaticBox.build).parameters["properties"]
+    assert "cls" not in built
+    assert "name" in built
+    raw_cls = schema(_StaticBox.__dict__["build"].__func__).parameters["properties"]
+    assert "cls" not in raw_cls
+    assert "name" in raw_cls
+
+    inherited = schema(_ChildStaticBox.run).parameters["properties"]
+    assert inherited["self"] == {"type": "string"}
+
+    marked = schema(_MarkedStatic.run).parameters["properties"]
+    assert marked["self"] == {"type": "string"}
+    other = schema(_MarkedStatic.other).parameters["properties"]
+    assert other["cls"] == {"type": "string"}
+
+    nested = schema(_OuterStatic.Inner.run).parameters["properties"]
+    assert nested["self"] == {"type": "string"}
+    nested_method = schema(_OuterStatic.Inner.method).parameters["properties"]
+    assert "self" not in nested_method
+    assert "name" in nested_method
 
 
 def test_gemini_enum_has_a_type_and_anthropic_walks_nested_constraints() -> None:
