@@ -104,6 +104,42 @@ def test_validate_variadic_tuple_items() -> None:
     assert any(issue.path == ("points", 1) for issue in bad.issues)
 
 
+def test_validate_array_field_length() -> None:
+    def collect(items: Annotated[list[str], Field(min_length=1, max_length=2)]) -> int:
+        """Count items."""
+        return len(items)
+
+    tool = schema(collect)
+    prop = tool.parameters["properties"]["items"]
+    assert prop["minItems"] == 1
+    assert prop["maxItems"] == 2
+    assert "minLength" not in prop
+    assert isinstance(tool.validate({"items": ["a"]}), ValidationSuccess)
+    empty = tool.validate({"items": []})
+    assert isinstance(empty, ValidationFailure)
+    assert any("minItems" in issue.message for issue in empty.issues)
+    long = tool.validate({"items": ["a", "b", "c"]})
+    assert isinstance(long, ValidationFailure)
+
+    def maybe(items: Annotated[list[str] | None, Field(min_length=1)] = None) -> int:
+        """Count optional items."""
+        return len(items or [])
+
+    optional = schema(maybe)
+    query = optional.parameters["properties"]["items"]
+    assert query["anyOf"][0]["minItems"] == 1
+    assert "minLength" not in query
+    assert isinstance(optional.validate({}), ValidationSuccess)
+    assert isinstance(optional.validate({"items": None}), ValidationSuccess)
+    assert isinstance(optional.validate({"items": []}), ValidationFailure)
+
+    def named(city: Annotated[str, Field(min_length=1)]) -> str:
+        """Name a city."""
+        return city
+
+    assert schema(named).parameters["properties"]["city"]["minLength"] == 1
+
+
 def test_validate_constraints_beside_anyof() -> None:
     """Field constraints on an optional annotation sit next to anyOf.
 
