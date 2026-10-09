@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
-from uuid import UUID
 
 from toolschema._schema_utils import copy_json_value
 
@@ -229,33 +227,119 @@ def _is_multiple(value: int | float, multiple: Any) -> bool:
     return quotient == quotient.to_integral_value()
 
 
+# JSON Schema draft 2020-12 defines these formats with the RFC 3339 and
+# RFC 4122 grammars. ``datetime.fromisoformat``, ``date.fromisoformat``,
+# ``time.fromisoformat``, and ``UUID`` are not those grammars: they accept
+# calendar dates, basic ISO 8601, week dates, and URN or brace UUIDs, and
+# they reject leap second 60 and lowercase ``t`` / ``z``.
+_DATE_RE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
+_TIME_RE = re.compile(
+    r"([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]+)?(?:[Zz]|([+-])([0-9]{2}):([0-9]{2}))"
+)
+_DATE_TIME_RE = re.compile(
+    r"([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]"
+    r"([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]+)?"
+    r"(?:[Zz]|([+-])([0-9]{2}):([0-9]{2}))"
+)
+_UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+_MINUTES_PER_DAY = 24 * 60
+_LEAP_UTC_MINUTE = 23 * 60 + 59
+
+
 def _matches_format(value: str, format_name: str) -> bool:
     if format_name == "date-time":
-        text = value[:-1] + "+00:00" if value.endswith("Z") else value
-        try:
-            datetime.fromisoformat(text)
-        except ValueError:
-            return False
-        return True
+        return _is_rfc3339_date_time(value)
     if format_name == "date":
-        try:
-            date.fromisoformat(value)
-        except ValueError:
-            return False
-        return True
+        return _is_rfc3339_date(value)
     if format_name == "time":
-        try:
-            time.fromisoformat(value)
-        except ValueError:
-            return False
-        return True
+        return _is_rfc3339_time(value)
     if format_name == "uuid":
-        try:
-            UUID(value)
-        except ValueError:
-            return False
-        return True
+        return _UUID_RE.fullmatch(value) is not None
     return True
+
+
+def _is_rfc3339_date(value: str) -> bool:
+    match = _DATE_RE.fullmatch(value)
+    if match is None:
+        return False
+    year, month, day = (int(part) for part in match.groups())
+    return _valid_calendar_date(year, month, day)
+
+
+def _is_rfc3339_time(value: str) -> bool:
+    match = _TIME_RE.fullmatch(value)
+    if match is None:
+        return False
+    hour, minute, second, _fraction, sign, offset_hour, offset_minute = match.groups()
+    offset = _offset_minutes(sign, offset_hour, offset_minute)
+    if offset is None:
+        return False
+    return _valid_clock(int(hour), int(minute), int(second), offset)
+
+
+def _is_rfc3339_date_time(value: str) -> bool:
+    match = _DATE_TIME_RE.fullmatch(value)
+    if match is None:
+        return False
+    (
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        _fraction,
+        sign,
+        offset_hour,
+        offset_minute,
+    ) = match.groups()
+    if not _valid_calendar_date(int(year), int(month), int(day)):
+        return False
+    offset = _offset_minutes(sign, offset_hour, offset_minute)
+    if offset is None:
+        return False
+    return _valid_clock(int(hour), int(minute), int(second), offset)
+
+
+def _offset_minutes(sign: str | None, hour: str | None, minute: str | None) -> int | None:
+    if sign is None:
+        return 0
+    if hour is None or minute is None:
+        return None
+    offset_hour = int(hour)
+    offset_minute = int(minute)
+    if offset_hour > 23 or offset_minute > 59:
+        return None
+    total = offset_hour * 60 + offset_minute
+    if sign == "-":
+        return -total
+    return total
+
+
+def _valid_clock(hour: int, minute: int, second: int, offset: int) -> bool:
+    if hour > 23 or minute > 59 or second > 60:
+        return False
+    if second < 60:
+        return True
+    # RFC 3339 allows second 60 only for a positive leap second, which is
+    # 23:59:60 UTC. The local clock is converted by subtracting the offset.
+    utc_minute = (hour * 60 + minute - offset) % _MINUTES_PER_DAY
+    return utc_minute == _LEAP_UTC_MINUTE
+
+
+def _valid_calendar_date(year: int, month: int, day: int) -> bool:
+    if month < 1 or month > 12 or day < 1:
+        return False
+    if month == 2:
+        leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+        last = 29 if leap else 28
+    elif month in {4, 6, 9, 11}:
+        last = 30
+    else:
+        last = 31
+    return day <= last
 
 
 def _schema_types(schema: dict[str, Any]) -> list[str]:
