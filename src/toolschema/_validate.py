@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -213,6 +215,18 @@ def _validate_constraints(
                 kind=ValidationIssueKind.CONSTRAINT,
             )
         )
+
+    if schema.get("contentEncoding") == "base64" and isinstance(value, str):
+        try:
+            base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError):
+            issues.append(
+                _issue(
+                    "String is not base64",
+                    path=path,
+                    kind=ValidationIssueKind.CONSTRAINT,
+                )
+            )
 
     return issues
 
@@ -466,6 +480,18 @@ def _validate_value(
         if not rest:
             return []
         return _validate_value(value, rest, path, defs, seen)
+
+    if "allOf" in schema:
+        issues: list[ValidationIssue] = []
+        branches = schema["allOf"]
+        if isinstance(branches, list):
+            for branch in branches:
+                if isinstance(branch, dict):
+                    issues.extend(_validate_value(value, branch, path, defs, seen))
+        rest = {key: item for key, item in schema.items() if key != "allOf"}
+        if rest:
+            issues.extend(_validate_value(value, rest, path, defs, seen))
+        return issues
 
     if "enum" in schema and not _enum_contains(value, schema["enum"]):
         return [

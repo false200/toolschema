@@ -68,6 +68,32 @@ def test_diff_cli() -> None:
     assert "diffs" in payload
 
 
+def test_export_skips_unresolved_annotation(tmp_path: Path) -> None:
+    module = tmp_path / "export_mod.py"
+    module.write_text(
+        "def ok(a: int) -> int:\n"
+        '    """Add."""\n'
+        "    return a\n"
+        "\n"
+        "def broken(name: Missing) -> str:\n"
+        '    """Broken."""\n'
+        "    return name\n",
+        encoding="utf-8",
+    )
+    env = {**_ENV, "PYTHONPATH": os.pathsep.join([str(tmp_path), _ENV["PYTHONPATH"]])}
+    result = subprocess.run(
+        [sys.executable, "-m", "toolschema", "export", "export_mod"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    names = [tool["name"] for tool in payload["tools"]]
+    assert names == ["ok"]
+
+
 def test_export_cli() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "toolschema", "export", "fixtures"],

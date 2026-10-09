@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -12,12 +13,38 @@ from toolschema.adapters._inline_refs import inline_refs
 SNAPSHOTS = Path(__file__).parent / "snapshots"
 
 
+@dataclass
+class _StrictItem:
+    name: str
+    note: str = "x"
+
+
+def _take_strict_item(item: _StrictItem) -> None:
+    """Take an item."""
+
+
 def _load_snapshot(name: str) -> dict:
     return json.loads((SNAPSHOTS / name).read_text(encoding="utf-8"))
 
 
 def test_add_openai_snapshot() -> None:
     assert schema(fixtures.add).to_openai() == _load_snapshot("add_openai.json")
+
+
+def test_openai_strict_requires_nested_properties() -> None:
+    item = schema(_take_strict_item).to_openai(strict=True)["function"]["parameters"]["properties"][
+        "item"
+    ]
+    assert item["additionalProperties"] is False
+    assert item["required"] == ["name", "note"]
+    assert item["properties"]["note"]["default"] == "x"
+
+    def labels(tags: dict[str, str]) -> None:
+        """Label items."""
+
+    tags = schema(labels).to_openai(strict=True)["function"]["parameters"]["properties"]["tags"]
+    assert tags["additionalProperties"] == {"type": "string"}
+    assert "required" not in tags
 
 
 def test_add_openai_strict_snapshot() -> None:

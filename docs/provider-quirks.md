@@ -4,7 +4,7 @@ This document captures intentional differences between provider adapters.
 
 ## OpenAI
 
-- `to_openai(strict=True)` sets `additionalProperties: false` and marks every property as required.
+- `to_openai(strict=True)` sets `additionalProperties: false` and marks every property as required, including nested objects. A `dict[str, T]` map keeps its `additionalProperties` schema.
 - Canonical `$schema` is stripped from `parameters` in the OpenAI payload.
 
 ## Anthropic
