@@ -13,6 +13,7 @@ import pytest
 pytest.importorskip("fastmcp")
 pytest.importorskip("mcp")
 
+from deep_harness import call_failed, tool_input_schema
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -43,14 +44,14 @@ async def _run_example_server_smoke() -> None:
 
             for tool in response.tools:
                 assert tool.description
-                _assert_claude_safe_schema(tool.inputSchema)
+                _assert_claude_safe_schema(tool_input_schema(tool))
 
             greet = await session.call_tool("greet", {"name": "Claude"})
-            assert greet.isError is not True
+            assert not call_failed(greet)
             assert "Claude" in greet.content[0].text
 
             add = await session.call_tool("add", {"a": 10, "b": 32})
-            assert add.isError is not True
+            assert not call_failed(add)
             assert "42" in add.content[0].text
 
 
@@ -75,7 +76,7 @@ async def _run_scaffolded_server_smoke(root: Path, package_name: str) -> None:
             assert "greet" in names
             assert "add" in names
             for tool in response.tools:
-                _assert_claude_safe_schema(tool.inputSchema)
+                _assert_claude_safe_schema(tool_input_schema(tool))
 
 
 def test_scaffolded_server_mcp_stdio(tmp_path: Path) -> None:
