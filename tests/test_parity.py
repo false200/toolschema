@@ -75,7 +75,7 @@ async def fastmcp_input_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     tool = FunctionTool.from_function(fn)
     mcp.add_tool(tool)
     registered = await mcp.get_tool(tool.name)
-    return registered.to_mcp_tool().model_dump()["inputSchema"]
+    return registered.to_mcp_tool().model_dump(by_alias=True)["inputSchema"]
 
 
 async def toolschema_fastmcp_input_schema(fn: Callable[..., Any]) -> dict[str, Any]:
@@ -87,7 +87,7 @@ async def toolschema_fastmcp_input_schema(fn: Callable[..., Any]) -> dict[str, A
     definition = schema(fn)
     register_tool(mcp, definition, fn)
     registered = await mcp.get_tool(definition.name)
-    return registered.to_mcp_tool().model_dump()["inputSchema"]
+    return registered.to_mcp_tool().model_dump(by_alias=True)["inputSchema"]
 
 
 @pytest.mark.parametrize("fn", [fixtures.add, fixtures.search_github])

@@ -30,7 +30,7 @@ def test_fastmcp_register_tool_on_server() -> None:
 
     async def check() -> None:
         tool = await mcp.get_tool("add")
-        payload = tool.to_mcp_tool().model_dump()
+        payload = tool.to_mcp_tool().model_dump(by_alias=True)
         assert payload["inputSchema"]["properties"]["a"]["type"] == "integer"
         result = await tool.run({"a": 2, "b": 3})
         assert result.structured_content == {"result": 5}

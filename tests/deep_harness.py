@@ -16,6 +16,23 @@ import fixtures
 from toolschema import ValidationFailure, ValidationSuccess, schema
 from toolschema._ir import ToolDefinition
 
+
+def tool_input_schema(tool: Any) -> Any:
+    """Read the MCP tool schema. SDK v2 renamed ``inputSchema`` to ``input_schema``."""
+    schema = getattr(tool, "input_schema", None)
+    if schema is None:
+        schema = tool.inputSchema
+    return schema
+
+
+def call_failed(result: Any) -> bool:
+    """Read a tool-call error flag. SDK v2 renamed ``isError`` to ``is_error``."""
+    flag = getattr(result, "is_error", None)
+    if flag is None:
+        flag = result.isError
+    return flag is True
+
+
 SEARCH_ARGS: dict[str, Any] = {
     "query": "laptop",
     "category": "computers",
@@ -216,20 +233,21 @@ async def mcp_stdio_deep() -> None:
             assert names == {"add", "search_products", "book_flight"}
 
             for tool in listed.tools:
-                dumped = json.dumps(tool.inputSchema)
+                input_schema = tool_input_schema(tool)
+                dumped = json.dumps(input_schema)
                 assert "$ref" not in dumped
-                assert tool.inputSchema.get("type") == "object"
+                assert input_schema.get("type") == "object"
 
             search = await session.call_tool("search_products", SEARCH_ARGS)
-            assert search.isError is not True
+            assert not call_failed(search)
             assert "laptop" in search.content[0].text
 
             add = await session.call_tool("add", ADD_ARGS)
-            assert add.isError is not True
+            assert not call_failed(add)
             assert "42" in add.content[0].text
 
             book = await session.call_tool("book_flight", BOOK_ARGS)
-            assert book.isError is not True
+            assert not call_failed(book)
             assert "TS-12345" in book.content[0].text
 
 
