@@ -61,7 +61,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 
 A dataclass, TypedDict, or NamedTuple that refers to itself (or cycles through another structured type) is emitted the same way: `$ref` plus `$defs` on the enclosing document. Nested structured types that are not part of a cycle stay inlined.
 
-`TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints).
+`TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints). On a list or set, `min_length` and `max_length` are `minItems` and `maxItems`.
 
 ## Annotated
 

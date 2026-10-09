@@ -58,8 +58,50 @@ def extract_annotated_metadata(metadata: tuple[Any, ...]) -> tuple[type[Any], di
     return base_type, extras
 
 
+def _variable_arrays(schema: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Arrays whose length is not already fixed by ``prefixItems``.
+
+    ``minLength`` does not apply to arrays. A tuple schema already has
+    ``minItems`` and ``maxItems``, so those stay as they are.
+    """
+    if schema.get("type") == "array" and "prefixItems" not in schema:
+        return [schema]
+    branches = schema.get("anyOf")
+    if not isinstance(branches, list):
+        return None
+    arrays: list[dict[str, Any]] = []
+    for branch in branches:
+        if not isinstance(branch, dict) or branch.get("type") == "null":
+            continue
+        if branch.get("type") != "array" or "prefixItems" in branch:
+            return None
+        arrays.append(branch)
+    return arrays or None
+
+
 def merge_field_into_schema(base_schema: dict[str, Any], extras: dict[str, Any]) -> dict[str, Any]:
     """Merge Field / Annotated metadata into a JSON Schema fragment."""
     if not extras:
         return base_schema
-    return {**base_schema, **extras}
+    arrays = _variable_arrays(base_schema)
+    if not arrays or ("minLength" not in extras and "maxLength" not in extras):
+        return {**base_schema, **extras}
+
+    extras = dict(extras)
+    length: dict[str, Any] = {}
+    if "minLength" in extras:
+        length["minItems"] = extras.pop("minLength")
+    if "maxLength" in extras:
+        length["maxItems"] = extras.pop("maxLength")
+    if base_schema.get("type") == "array":
+        return {**base_schema, **length, **extras}
+
+    branches: list[Any] = []
+    for branch in base_schema["anyOf"]:
+        variable_array = (
+            isinstance(branch, dict)
+            and branch.get("type") == "array"
+            and "prefixItems" not in branch
+        )
+        branches.append({**branch, **length} if variable_array else branch)
+    return {**base_schema, "anyOf": branches, **extras}
