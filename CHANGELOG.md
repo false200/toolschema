@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `toolschema export` skips a function whose annotation name is undefined. `NameError` used to abort the command, so one unfinished function hid every other tool in the module.
+- `validate()` rejects a `bytes` argument whose text is not standard base64. `contentEncoding: base64` used to accept any string, including `"!!!"`.
+- `validate()` checks `allOf`. A schema that requires a field only inside `allOf` used to accept `{}`.
+- `to_openai(strict=True)` closes nested objects and lists every nested property in `required`. A dataclass field with a default stayed optional. Maps (`dict[str, T]`) keep their value schema.
 - `Field(min_length=...)` and `Field(max_length=...)` on a list or set become `minItems` and `maxItems`. They were emitted as `minLength` and `maxLength`, which do not apply to arrays, so `validate()` accepted `[]`. A fixed tuple keeps the length it already has. Strings still use `minLength` and `maxLength`.
 - `validate()` checks `date`, `date-time`, `time`, and `uuid` against the JSON Schema grammars (RFC 3339 and the hyphenated RFC 4122 form). `datetime.fromisoformat` accepted a calendar date, a time with no offset, and other ISO 8601 forms as `date-time`, and rejected leap seconds and lowercase `t` / `z`. `UUID()` accepted unhyphenated, URN, and brace forms.
 - `@staticmethod` parameters named `self` or `cls` stay in the schema. They were dropped because the qualified name looks like a method. Instance methods and classmethods still omit the receiver. A staticmethod on a class created inside a function still uses that qualified-name rule, because the class object cannot be loaded from the module.

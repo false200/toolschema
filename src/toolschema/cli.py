@@ -4,6 +4,7 @@ import argparse
 import importlib
 import json
 import sys
+import types
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -96,8 +97,45 @@ def _collect_keys(obj: Any, prefix: str = "") -> set[str]:
     return keys
 
 
+def _import_postponed(module_path: str) -> types.ModuleType | None:
+    spec = importlib.util.find_spec(module_path)
+    origin = spec.origin if spec is not None else None
+    if not isinstance(origin, str) or not origin.endswith(".py"):
+        return None
+    source = Path(origin).read_text(encoding="utf-8")
+    code = compile("from __future__ import annotations\n" + source, origin, "exec")
+    module = types.ModuleType(module_path)
+    module.__file__ = origin
+    module.__package__ = module_path.rpartition(".")[0]
+    sys.modules[module_path] = module
+    try:
+        exec(code, module.__dict__)
+    except Exception:
+        sys.modules.pop(module_path, None)
+        raise
+    return module
+
+
+def _import_export_module(module_path: str) -> types.ModuleType:
+    """Import ``module_path`` for export.
+
+    ``name: Missing`` raises ``NameError`` while the module body runs, so the
+    per-function ``schema()`` handler never sees it. Retry with postponed
+    annotations, then skip that function and keep the rest.
+    """
+    try:
+        return importlib.import_module(module_path)
+    except NameError:
+        sys.modules.pop(module_path, None)
+        # shortcut: module body runs twice, stop if import has side effects.
+        module = _import_postponed(module_path)
+        if module is None:
+            raise
+        return module
+
+
 def _discover_tools(module_path: str) -> list[tuple[str, Callable[..., Any]]]:
-    module = importlib.import_module(module_path)
+    module = _import_export_module(module_path)
     tools: list[tuple[str, Callable[..., Any]]] = []
     for name in sorted(dir(module)):
         if name.startswith("_"):
@@ -113,7 +151,7 @@ def cmd_export(args: argparse.Namespace) -> int:
     for name, fn in _discover_tools(args.module):
         try:
             tool: ToolDefinition = schema(fn)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, NameError):
             continue
         tools.append(tool.to_json_schema() | {"_source": f"{args.module}:{name}"})
 

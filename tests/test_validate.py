@@ -104,6 +104,32 @@ def test_validate_variadic_tuple_items() -> None:
     assert any(issue.path == ("points", 1) for issue in bad.issues)
 
 
+def test_validate_base64_content_encoding() -> None:
+    def read(data: bytes) -> int:
+        """Read bytes."""
+        return len(data)
+
+    tool = schema(read)
+    assert isinstance(tool.validate({"data": "YQ=="}), ValidationSuccess)
+    assert isinstance(tool.validate({"data": ""}), ValidationSuccess)
+    bad = tool.validate({"data": "!!!"})
+    assert isinstance(bad, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.CONSTRAINT for issue in bad.issues)
+
+
+def test_validate_allof_required() -> None:
+    parameters = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"name": {"type": "string"}},
+        "allOf": [{"type": "object", "required": ["name"]}],
+    }
+    missing = validate_arguments({}, parameters)
+    assert isinstance(missing, ValidationFailure)
+    assert any(issue.kind is ValidationIssueKind.REQUIRED for issue in missing.issues)
+    assert isinstance(validate_arguments({"name": "ada"}, parameters), ValidationSuccess)
+
+
 def test_validate_array_field_length() -> None:
     def collect(items: Annotated[list[str], Field(min_length=1, max_length=2)]) -> int:
         """Count items."""
