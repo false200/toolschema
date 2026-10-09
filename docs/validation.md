@@ -46,6 +46,8 @@ else:
 
 `const` uses JSON equality. `true` is not `1`, and `1` matches `1.0` when the schema has no stricter `type`. Object key order does not matter. Pydantic represents `Literal["a"]` as `{"const": "a", "type": "string"}`, so a discriminated-union tag has to match that constant.
 
+`date`, `date-time`, and `time` follow RFC 3339. `date-time` and `time` require an offset (`Z` or `±HH:MM`), seconds, and a `T` between the date and the time. `t` and `z` may be lowercase. Second `60` is accepted only when the UTC time is 23:59:60. `uuid` is the hyphenated RFC 4122 text, any case. A calendar date, `20200101`, `12:00:00`, or a UUID without hyphens does not match. Other format names, including `email` and `uri`, are not checked. A format annotation does not apply to non-strings.
+
 ## ValidationSuccess
 
 ```python
