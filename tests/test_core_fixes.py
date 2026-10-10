@@ -38,6 +38,14 @@ class _User:
     role: str = "admin"
 
 
+@dataclasses.dataclass
+class _Blob:
+    data: bytes = b"hi"
+
+
+_BLOB = _Blob()
+
+
 _TAGS = {"b", "a"}
 
 
@@ -106,8 +114,25 @@ def test_non_json_defaults_are_serialized() -> None:
     assert props["whole"]["default"] == 2
     assert props["uid"]["default"] == "12345678-1234-5678-1234-567812345678"
     assert props["path"]["default"] == "/tmp/x"
-    assert props["blob"]["default"] == "hi"
+    assert props["blob"]["default"] == "aGk="
     assert props["color"] == {"enum": ["red"], "default": "red"}
+
+
+def test_bytes_default_round_trips_through_validate() -> None:
+    def read(data: bytes = b"hi") -> int:
+        """Read bytes."""
+        return len(data)
+
+    filled = schema(read).validate({})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value["data"] == "aGk="
+
+    def save(doc: _Blob = _BLOB) -> None:
+        """Save a document."""
+
+    saved = schema(save).validate({})
+    assert isinstance(saved, ValidationSuccess)
+    assert saved.value["doc"]["data"] == "aGk="
 
 
 def test_invalid_pattern_is_a_validation_issue() -> None:

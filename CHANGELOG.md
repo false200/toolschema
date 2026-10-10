@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Bytes defaults are standard base64. `data: bytes = b"hi"` was stored as the text `"hi"`, so `validate({})` rejected the omitted argument. The same text was written for a nested dataclass field.
 - `toolschema export` skips a function whose annotation name is undefined. `NameError` used to abort the command, so one unfinished function hid every other tool in the module.
 - `validate()` rejects a `bytes` argument whose text is not standard base64. `contentEncoding: base64` used to accept any string, including `"!!!"`.
 - `validate()` checks `allOf`. A schema that requires a field only inside `allOf` used to accept `{}`.
