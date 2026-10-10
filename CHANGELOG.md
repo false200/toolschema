@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `Field(min_length=...)` and `Field(max_length=...)` on a dict or other object become `minProperties` and `maxProperties`. They were emitted as `minLength` and `maxLength`, so `validate()` accepted `{}`.
+- `validate()` requires exactly one `oneOf` branch, then checks sibling keywords. A model schema that used `oneOf` used to accept every value. Nested defaults inside the matching branch are filled.
+- `toolschema export` lists functions only. Imported callables such as `Annotated` and `Field` were exported as tools. A skipped function now prints a warning.
+- A default that is not JSON (`object()`, `inf`, `nan`, a non-finite decimal) raises `ValueError` instead of producing a value `json.dumps` cannot write as JSON.
 - Bytes defaults are standard base64. `data: bytes = b"hi"` was stored as the text `"hi"`, so `validate({})` rejected the omitted argument. The same text was written for a nested dataclass field.
 - `toolschema export` skips a function whose annotation name is undefined. `NameError` used to abort the command, so one unfinished function hid every other tool in the module.
 - `validate()` rejects a `bytes` argument whose text is not standard base64. `contentEncoding: base64` used to accept any string, including `"!!!"`.

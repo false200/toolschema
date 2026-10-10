@@ -61,7 +61,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 
 A dataclass, TypedDict, or NamedTuple that refers to itself (or cycles through another structured type) is emitted the same way: `$ref` plus `$defs` on the enclosing document. Nested structured types that are not part of a cycle stay inlined.
 
-`TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints). On a list or set, `min_length` and `max_length` are `minItems` and `maxItems`.
+`TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints). On a list or set, `min_length` and `max_length` are `minItems` and `maxItems`. On a dict or other object, they are `minProperties` and `maxProperties`.
 
 ## Annotated
 
@@ -79,7 +79,7 @@ Annotated[str, "City name"]
 
 ## Defaults
 
-Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`. Enum defaults are written as the member value (`Color.RED` → `"red"`), the same values listed in `enum`. Tuple and set defaults are written as arrays. Dataclass and `NamedTuple` instances are written as objects, including when they are nested inside another default. A Pydantic model instance is written as an object whose keys are the validation aliases from `model_json_schema()` (`Field(alias="fullName")`, not `serialization_alias`). A Pydantic root model is written as that root value. Datetime, date, time, UUID, path, and decimal defaults are written as JSON strings or numbers. Bytes defaults are standard base64, matching `contentEncoding`. List and dict defaults are copied, so mutating a filled value does not change the function default or the next `validate()` result. Nested object defaults are filled too. A cyclic default raises `ValueError`.
+Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`. Enum defaults are written as the member value (`Color.RED` → `"red"`), the same values listed in `enum`. Tuple and set defaults are written as arrays. Dataclass and `NamedTuple` instances are written as objects, including when they are nested inside another default. A Pydantic model instance is written as an object whose keys are the validation aliases from `model_json_schema()` (`Field(alias="fullName")`, not `serialization_alias`). A Pydantic root model is written as that root value. Datetime, date, time, UUID, path, and decimal defaults are written as JSON strings or numbers. Bytes defaults are standard base64, matching `contentEncoding`. List and dict defaults are copied, so mutating a filled value does not change the function default or the next `validate()` result. Nested object defaults are filled too. A cyclic default raises `ValueError`. A default that is still not JSON, including `object()` or a non-finite float, raises `ValueError`.
 
 ```python
 def f(a: int, b: int = 1): ...

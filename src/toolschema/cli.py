@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import inspect
 import json
 import sys
 import types
@@ -141,7 +142,9 @@ def _discover_tools(module_path: str) -> list[tuple[str, Callable[..., Any]]]:
         if name.startswith("_"):
             continue
         obj = getattr(module, name)
-        if callable(obj):
+        # Classes and typing special forms are callable, so ``Annotated`` and
+        # ``Field`` would be exported as tools.
+        if inspect.isfunction(obj):
             tools.append((name, obj))
     return tools
 
@@ -151,7 +154,8 @@ def cmd_export(args: argparse.Namespace) -> int:
     for name, fn in _discover_tools(args.module):
         try:
             tool: ToolDefinition = schema(fn)
-        except (TypeError, ValueError, NameError):
+        except (TypeError, ValueError, NameError) as exc:
+            print(f"warning: skipped {args.module}:{name}: {exc}", file=sys.stderr)
             continue
         tools.append(tool.to_json_schema() | {"_source": f"{args.module}:{name}"})
 

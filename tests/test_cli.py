@@ -94,6 +94,36 @@ def test_export_skips_unresolved_annotation(tmp_path: Path) -> None:
     assert names == ["ok"]
 
 
+def test_export_ignores_imported_callables_and_warns(tmp_path: Path) -> None:
+    module = tmp_path / "export_tools.py"
+    module.write_text(
+        "from typing import Annotated\n"
+        "from toolschema import Field\n"
+        "\n"
+        "def greet(name: Annotated[str, Field(description='City')]) -> str:\n"
+        '    """Say hello."""\n'
+        "    return name\n"
+        "\n"
+        "def bad(value: complex) -> complex:\n"
+        '    """Unsupported."""\n'
+        "    return value\n",
+        encoding="utf-8",
+    )
+    env = {**_ENV, "PYTHONPATH": os.pathsep.join([str(tmp_path), _ENV["PYTHONPATH"]])}
+    result = subprocess.run(
+        [sys.executable, "-m", "toolschema", "export", "export_tools"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert [tool["name"] for tool in payload["tools"]] == ["greet"]
+    assert "skipped" in result.stderr
+    assert "export_tools:bad" in result.stderr
+
+
 def test_export_cli() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "toolschema", "export", "fixtures"],

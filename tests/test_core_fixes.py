@@ -118,6 +118,20 @@ def test_non_json_defaults_are_serialized() -> None:
     assert props["color"] == {"enum": ["red"], "default": "red"}
 
 
+def test_non_json_scalar_defaults_raise() -> None:
+    def marker(token: str = object()) -> None:
+        """Mark."""
+
+    with pytest.raises(ValueError, match="object"):
+        schema(marker)
+
+    def unbounded(limit: float = float("inf")) -> None:
+        """Limit."""
+
+    with pytest.raises(ValueError, match="non-finite"):
+        schema(unbounded)
+
+
 def test_bytes_default_round_trips_through_validate() -> None:
     def read(data: bytes = b"hi") -> int:
         """Read bytes."""

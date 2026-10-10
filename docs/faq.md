@@ -49,6 +49,8 @@ if isinstance(result, ValidationSuccess):
     my_fn(**result.value)
 ```
 
+`result.value` is JSON. That splat works for `str`, `int`, `float`, `bool`, `list`, `dict`, and `None`. An `Enum` arrives as its value, and a dataclass or model arrives as a `dict`.
+
 ---
 
 ## Providers

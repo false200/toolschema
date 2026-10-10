@@ -57,7 +57,7 @@ toolschema export myapp.tools
 toolschema export myapp.tools --output tools.json
 ```
 
-Skips objects where `schema()` raises `TypeError` or `ValueError`.
+Exports functions only. Classes and imported names such as `Annotated` or `Field` are left out. Prints a warning when `schema()` raises `TypeError`, `ValueError`, or `NameError`, and still writes the other tools.
 
 Output shape:
 

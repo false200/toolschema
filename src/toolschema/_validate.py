@@ -159,6 +159,26 @@ def _validate_constraints(
                     )
                 )
 
+    if isinstance(value, dict):
+        min_properties = schema.get("minProperties")
+        max_properties = schema.get("maxProperties")
+        if min_properties is not None and len(value) < min_properties:
+            issues.append(
+                _issue(
+                    f"Object has too few properties (minProperties {min_properties})",
+                    path=path,
+                    kind=ValidationIssueKind.CONSTRAINT,
+                )
+            )
+        if max_properties is not None and len(value) > max_properties:
+            issues.append(
+                _issue(
+                    f"Object has too many properties (maxProperties {max_properties})",
+                    path=path,
+                    kind=ValidationIssueKind.CONSTRAINT,
+                )
+            )
+
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         minimum = schema.get("minimum")
         maximum = schema.get("maximum")
@@ -396,6 +416,15 @@ def _with_defaults(
             if isinstance(branch, dict) and not _validate_value(value, branch, defs=defs):
                 return _with_defaults(value, branch, defs, seen)
         return value
+    if "oneOf" in schema and isinstance(schema.get("oneOf"), list):
+        matches = [
+            branch
+            for branch in schema["oneOf"]
+            if isinstance(branch, dict) and not _validate_value(value, branch, defs=defs)
+        ]
+        if len(matches) == 1:
+            return _with_defaults(value, matches[0], defs, seen)
+        return value
     object_schema = schema.get("type") == "object" or "object" in _schema_types(schema)
     if isinstance(value, dict) and (object_schema or "properties" in schema):
         properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
@@ -492,6 +521,35 @@ def _validate_value(
         if rest:
             issues.extend(_validate_value(value, rest, path, defs, seen))
         return issues
+
+    if "oneOf" in schema:
+        # Exactly one branch. A model schema that uses oneOf used to skip this
+        # keyword, so every value passed.
+        branches = schema["oneOf"]
+        if not isinstance(branches, list):
+            return [
+                _issue(
+                    "oneOf must be a list",
+                    path=path,
+                    kind=ValidationIssueKind.TYPE,
+                )
+            ]
+        matched = 0
+        for branch in branches:
+            if isinstance(branch, dict) and not _validate_value(value, branch, path, defs, seen):
+                matched += 1
+        if matched != 1:
+            return [
+                _issue(
+                    f"Value {_type_name(value)!r} does not match exactly one oneOf branch",
+                    path=path,
+                    kind=ValidationIssueKind.TYPE,
+                )
+            ]
+        rest = {key: item for key, item in schema.items() if key != "oneOf"}
+        if not rest:
+            return []
+        return _validate_value(value, rest, path, defs, seen)
 
     if "enum" in schema and not _enum_contains(value, schema["enum"]):
         return [
