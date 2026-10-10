@@ -13,6 +13,12 @@ from toolschema._validate import (
 )
 
 
+class _OneOfChoice:
+    @staticmethod
+    def model_json_schema() -> dict:
+        return {"oneOf": [{"type": "string"}, {"const": "nope"}]}
+
+
 def test_validate_success_with_defaults() -> None:
     tool = schema(fixtures.add)
     result = tool.validate({"a": 2})
@@ -164,6 +170,66 @@ def test_validate_array_field_length() -> None:
         return city
 
     assert schema(named).parameters["properties"]["city"]["minLength"] == 1
+
+
+def test_validate_object_field_length() -> None:
+    def label(labels: Annotated[dict[str, str], Field(min_length=1, max_length=2)]) -> int:
+        """Count labels."""
+        return len(labels)
+
+    tool = schema(label)
+    prop = tool.parameters["properties"]["labels"]
+    assert prop["minProperties"] == 1
+    assert prop["maxProperties"] == 2
+    assert "minLength" not in prop
+    assert isinstance(tool.validate({"labels": {"a": "b"}}), ValidationSuccess)
+    empty = tool.validate({"labels": {}})
+    assert isinstance(empty, ValidationFailure)
+    assert any("minProperties" in issue.message for issue in empty.issues)
+    long = tool.validate({"labels": {"a": "b", "c": "d", "e": "f"}})
+    assert isinstance(long, ValidationFailure)
+
+    def maybe(labels: Annotated[dict[str, str] | None, Field(min_length=1)] = None) -> int:
+        """Count optional labels."""
+        return len(labels or {})
+
+    optional = schema(maybe)
+    query = optional.parameters["properties"]["labels"]
+    assert query["anyOf"][0]["minProperties"] == 1
+    assert "minLength" not in query
+    assert isinstance(optional.validate({}), ValidationSuccess)
+    assert isinstance(optional.validate({"labels": None}), ValidationSuccess)
+    assert isinstance(optional.validate({"labels": {}}), ValidationFailure)
+
+
+def test_validate_oneof_exactly_one_branch() -> None:
+    def pick(value: _OneOfChoice) -> None:
+        """Pick one."""
+
+    tool = schema(pick)
+    assert tool.parameters["properties"]["value"]["oneOf"][0] == {"type": "string"}
+    assert isinstance(tool.validate({"value": "ok"}), ValidationSuccess)
+    assert isinstance(tool.validate({"value": 1}), ValidationFailure)
+    assert isinstance(tool.validate({"value": "nope"}), ValidationFailure)
+
+    parameters = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["item"],
+        "properties": {
+            "item": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {"n": {"type": "integer", "default": 1}},
+                    }
+                ]
+            }
+        },
+    }
+    filled = validate_arguments({"item": {}}, parameters)
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"item": {"n": 1}}
 
 
 def test_validate_constraints_beside_anyof() -> None:

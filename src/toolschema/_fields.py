@@ -58,50 +58,54 @@ def extract_annotated_metadata(metadata: tuple[Any, ...]) -> tuple[type[Any], di
     return base_type, extras
 
 
-def _variable_arrays(schema: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """Arrays whose length is not already fixed by ``prefixItems``.
+def _schemas_of(schema: dict[str, Any], json_type: str) -> list[dict[str, Any]] | None:
+    """Return every non-null branch of ``json_type``, or None when they are mixed.
 
-    ``minLength`` does not apply to arrays. A tuple schema already has
-    ``minItems`` and ``maxItems``, so those stay as they are.
+    ``minLength`` does not apply to arrays or objects. A tuple schema already
+    has ``minItems`` and ``maxItems``, so those stay as they are.
     """
-    if schema.get("type") == "array" and "prefixItems" not in schema:
+    if schema.get("type") == json_type and not (json_type == "array" and "prefixItems" in schema):
         return [schema]
     branches = schema.get("anyOf")
     if not isinstance(branches, list):
         return None
-    arrays: list[dict[str, Any]] = []
+    found: list[dict[str, Any]] = []
     for branch in branches:
         if not isinstance(branch, dict) or branch.get("type") == "null":
             continue
-        if branch.get("type") != "array" or "prefixItems" in branch:
+        if branch.get("type") != json_type or (json_type == "array" and "prefixItems" in branch):
             return None
-        arrays.append(branch)
-    return arrays or None
+        found.append(branch)
+    return found or None
 
 
 def merge_field_into_schema(base_schema: dict[str, Any], extras: dict[str, Any]) -> dict[str, Any]:
     """Merge Field / Annotated metadata into a JSON Schema fragment."""
     if not extras:
         return base_schema
-    arrays = _variable_arrays(base_schema)
-    if not arrays or ("minLength" not in extras and "maxLength" not in extras):
+    if "minLength" not in extras and "maxLength" not in extras:
+        return {**base_schema, **extras}
+
+    arrays = _schemas_of(base_schema, "array")
+    objects = None if arrays else _schemas_of(base_schema, "object")
+    if not arrays and not objects:
         return {**base_schema, **extras}
 
     extras = dict(extras)
     length: dict[str, Any] = {}
+    min_key, max_key = ("minItems", "maxItems") if arrays else ("minProperties", "maxProperties")
     if "minLength" in extras:
-        length["minItems"] = extras.pop("minLength")
+        length[min_key] = extras.pop("minLength")
     if "maxLength" in extras:
-        length["maxItems"] = extras.pop("maxLength")
-    if base_schema.get("type") == "array":
+        length[max_key] = extras.pop("maxLength")
+    if base_schema.get("type") in {"array", "object"}:
         return {**base_schema, **length, **extras}
 
+    kind = "array" if arrays else "object"
     branches: list[Any] = []
     for branch in base_schema["anyOf"]:
-        variable_array = (
-            isinstance(branch, dict)
-            and branch.get("type") == "array"
-            and "prefixItems" not in branch
+        apply = (
+            isinstance(branch, dict) and branch.get("type") == kind and "prefixItems" not in branch
         )
-        branches.append({**branch, **length} if variable_array else branch)
+        branches.append({**branch, **length} if apply else branch)
     return {**base_schema, "anyOf": branches, **extras}

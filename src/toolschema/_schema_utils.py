@@ -4,6 +4,7 @@ import base64
 import copy
 import dataclasses
 import enum
+import math
 import os
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -21,7 +22,8 @@ def json_schema_default(value: Any) -> Any:
     NamedTuple instances are written as objects. Pydantic model instances are
     written as objects whose keys match ``model_json_schema()``, or as the
     root value for a root model. A cyclic default raises ``ValueError``.
-    Bytes are standard base64, matching ``contentEncoding``.
+    Bytes are standard base64, matching ``contentEncoding``. A value that is
+    still not JSON, including a non-finite float, raises ``ValueError``.
     """
     return _json_schema_default(value, frozenset())
 
@@ -36,6 +38,8 @@ def _json_schema_default(value: Any, seen: frozenset[int]) -> Any:
     if isinstance(value, time):
         return value.isoformat()
     if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError(f"Cannot serialize non-finite decimal default {value!r}")
         integral = value.to_integral_value()
         if value == integral:
             return int(integral)
@@ -70,7 +74,17 @@ def _json_schema_default(value: Any, seen: frozenset[int]) -> Any:
         if isinstance(value, list):
             return [_json_schema_default(item, child_seen) for item in value]
         return {key: _json_schema_default(item, child_seen) for key, item in value.items()}
-    return value
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"Cannot serialize non-finite float default {value!r}")
+        return value
+    raise ValueError(f"Cannot serialize default of type {type(value).__name__}")
 
 
 _NOT_STRUCTURED = object()

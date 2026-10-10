@@ -33,6 +33,7 @@ else:
 | `#/$defs/` `$ref` | Local reference target, including circular models |
 | `const` | Value differs from the constant (Pydantic single-value `Literal`) |
 | `minLength` / `maxLength` | String too short |
+| `minProperties` / `maxProperties` | Object has too few or too many keys |
 | `pattern` | Regex mismatch |
 | `minimum` / `maximum` | Number out of range |
 | `additionalProperties: false` | Extra keys rejected |
@@ -40,6 +41,7 @@ else:
 | `prefixItems` | `tuple[int, str]` element types |
 | `minItems` / `maxItems` | Tuple shorter or longer than its length |
 | `anyOf` / optional types | At least one branch matches, then sibling keywords are checked |
+| `oneOf` | Exactly one branch matches, then sibling keywords are checked |
 | `allOf` | Every branch must match, then sibling keywords are checked |
 | `contentEncoding: base64` | `bytes` text must be standard base64 |
 | Defaults | Missing optional fields filled from schema, including nested objects. Dataclass, `NamedTuple`, and model instance defaults are JSON values |
@@ -59,7 +61,7 @@ ValidationSuccess(
 )
 ```
 
-Use `result.value` as kwargs for your function.
+`result.value` is JSON. `my_tool(**result.value)` works when every argument is already a JSON value (`str`, `int`, `float`, `bool`, `list`, `dict`, or `None`). An `Enum` arrives as its value, and a dataclass or model arrives as a `dict`.
 
 ## ValidationFailure
 
@@ -100,7 +102,7 @@ result = standard["validate"]({"name": "Ada"})
 
 - `$ref` is resolved only for local `#/$defs/` pointers. Other reference formats are rejected.
 - No `format` keyword (email, uri, etc.)
-- No `oneOf` discrimination beyond trying each branch
+- `oneOf` tries every branch and requires exactly one match. It does not pick a branch from a discriminator field.
 - Not a replacement for Pydantic `model_validate`
 
 For production argument parsing, consider: `validate()` → `my_fn(**result.value)` or Pydantic models as parameter types.

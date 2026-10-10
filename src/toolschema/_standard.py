@@ -70,6 +70,8 @@ def build_standard_schema(
     ) -> dict[str, Any]:
         opts = _coerce_options(options)
         _ensure_target(opts.target)
+        # shortcut: target is checked, not converted (prefixItems stays on
+        # draft-07 and openapi-3.0), rewrite when a caller needs that dialect.
         return strip_canonical_meta(parameters)
 
     def json_schema_output(
