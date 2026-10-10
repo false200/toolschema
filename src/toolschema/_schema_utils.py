@@ -21,6 +21,7 @@ def json_schema_default(value: Any) -> Any:
     NamedTuple instances are written as objects. Pydantic model instances are
     written as objects whose keys match ``model_json_schema()``, or as the
     root value for a root model. A cyclic default raises ``ValueError``.
+    Bytes are standard base64, matching ``contentEncoding``.
     """
     return _json_schema_default(value, frozenset())
 
@@ -47,10 +48,8 @@ def _json_schema_default(value: Any, seen: frozenset[int]) -> Any:
             return rendered.decode("utf-8", "surrogateescape")
         return rendered
     if isinstance(value, (bytes, bytearray)):
-        try:
-            return bytes(value).decode("utf-8")
-        except UnicodeDecodeError:
-            return base64.b64encode(bytes(value)).decode("ascii")
+        # Utf-8 text is not base64, so validate() rejects the default.
+        return base64.b64encode(bytes(value)).decode("ascii")
 
     structured = _structured_default(value, seen)
     if structured is not _NOT_STRUCTURED:
