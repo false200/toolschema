@@ -68,8 +68,8 @@ def book(
 | Parameter | JSON Schema key |
 |-----------|-----------------|
 | `description` | `description` |
-| `min_length` | `minLength` on strings, `minItems` on arrays |
-| `max_length` | `maxLength` on strings, `maxItems` on arrays |
+| `min_length` | `minLength` on strings, `minItems` on arrays, `minProperties` on objects |
+| `max_length` | `maxLength` on strings, `maxItems` on arrays, `maxProperties` on objects |
 | `ge` | `minimum` |
 | `le` | `maximum` |
 | `gt` | `exclusiveMinimum` |

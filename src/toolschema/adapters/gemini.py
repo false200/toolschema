@@ -37,8 +37,8 @@ def _convert_type(schema: dict[str, Any]) -> dict[str, Any]:
             ]
         elif key == "additionalProperties" and isinstance(value, dict):
             result["additionalProperties"] = _convert_schema(value)
-        elif key == "anyOf" and isinstance(value, list):
-            result["anyOf"] = [
+        elif key in {"anyOf", "oneOf", "allOf"} and isinstance(value, list):
+            result[key] = [
                 _convert_schema(item) if isinstance(item, dict) else item for item in value
             ]
         elif key == "$defs" and isinstance(value, dict):

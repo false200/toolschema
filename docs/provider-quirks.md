@@ -19,7 +19,7 @@ This document captures intentional differences between provider adapters.
 
 ## Gemini
 
-- JSON Schema `type` values are uppercased (`STRING`, `INTEGER`, `OBJECT`, ...), including types nested under `prefixItems` and `$defs`.
+- JSON Schema `type` values are uppercased (`STRING`, `INTEGER`, `OBJECT`, ...), including types nested under `prefixItems`, `anyOf`, `oneOf`, `allOf`, and `$defs`.
 - `enum` / `Literal` values with no `type` get one inferred from the values (`STRING`, `INTEGER`, `NUMBER`, or `BOOLEAN`).
 - Output schemas are not emitted in the Gemini adapter in v0.1; parameters only.
 

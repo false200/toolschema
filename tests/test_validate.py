@@ -172,6 +172,37 @@ def test_validate_array_field_length() -> None:
     assert schema(named).parameters["properties"]["city"]["minLength"] == 1
 
 
+def test_validate_mixed_union_field_length() -> None:
+    def both(value: Annotated[str | list[str], Field(min_length=1, max_length=2)]) -> None:
+        """Take a string or a list."""
+
+    prop = schema(both).parameters["properties"]["value"]
+    assert prop["minLength"] == 1
+    assert prop["maxLength"] == 2
+    assert prop["anyOf"][1]["minItems"] == 1
+    assert prop["anyOf"][1]["maxItems"] == 2
+    tool = schema(both)
+    assert isinstance(tool.validate({"value": "ab"}), ValidationSuccess)
+    assert isinstance(tool.validate({"value": ["a"]}), ValidationSuccess)
+    assert isinstance(tool.validate({"value": ""}), ValidationFailure)
+    assert isinstance(tool.validate({"value": []}), ValidationFailure)
+    assert isinstance(tool.validate({"value": "abcd"}), ValidationFailure)
+    assert isinstance(tool.validate({"value": ["a", "b", "c"]}), ValidationFailure)
+
+    def kinds(value: Annotated[list[str] | dict[str, str], Field(min_length=1)]) -> None:
+        """Take a list or a mapping."""
+
+    mixed = schema(kinds)
+    branch = mixed.parameters["properties"]["value"]
+    assert "minLength" not in branch
+    assert branch["anyOf"][0]["minItems"] == 1
+    assert branch["anyOf"][1]["minProperties"] == 1
+    assert isinstance(mixed.validate({"value": []}), ValidationFailure)
+    assert isinstance(mixed.validate({"value": {}}), ValidationFailure)
+    assert isinstance(mixed.validate({"value": ["a"]}), ValidationSuccess)
+    assert isinstance(mixed.validate({"value": {"a": "b"}}), ValidationSuccess)
+
+
 def test_validate_object_field_length() -> None:
     def label(labels: Annotated[dict[str, str], Field(min_length=1, max_length=2)]) -> int:
         """Count labels."""

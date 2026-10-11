@@ -7,7 +7,7 @@ from typing import Annotated
 
 import fixtures
 
-from toolschema import Field, schema
+from toolschema import Field, ToolDefinition, schema
 from toolschema.adapters._inline_refs import inline_refs
 
 SNAPSHOTS = Path(__file__).parent / "snapshots"
@@ -82,6 +82,52 @@ def test_gemini_uppercases_prefix_item_types() -> None:
 
     nested = schema(rows).to_gemini()["parameters"]["properties"]["items"]["items"]["prefixItems"]
     assert nested == [{"type": "INTEGER"}, {"type": "STRING"}]
+
+
+class _UnionChoice:
+    @staticmethod
+    def model_json_schema() -> dict:
+        return {
+            "oneOf": [{"type": "string"}, {"type": "integer"}],
+            "allOf": [{"type": "object", "properties": {"n": {"type": "integer"}}}],
+        }
+
+
+def test_gemini_uppercases_union_keywords() -> None:
+    def pick(value: _UnionChoice) -> None:
+        """Pick one."""
+
+    prop = schema(pick).to_gemini()["parameters"]["properties"]["value"]
+    assert prop["oneOf"] == [{"type": "STRING"}, {"type": "INTEGER"}]
+    assert prop["allOf"][0]["type"] == "OBJECT"
+    assert prop["allOf"][0]["properties"]["n"]["type"] == "INTEGER"
+
+
+def test_openai_strict_leaves_instance_values_alone() -> None:
+    tool = ToolDefinition(
+        name="record",
+        description="Record a value.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "default": {"type": "object", "properties": {"a": 1}},
+                    "const": {"type": "object", "properties": {"b": 2}},
+                    "enum": [{"type": "object", "properties": {"c": 3}}],
+                }
+            },
+            "additionalProperties": False,
+            "required": ["meta"],
+        },
+    )
+    meta = tool.to_openai(strict=True)["function"]["parameters"]["properties"]["meta"]
+    assert meta["default"] == {"type": "object", "properties": {"a": 1}}
+    assert meta["const"] == {"type": "object", "properties": {"b": 2}}
+    assert meta["enum"] == [{"type": "object", "properties": {"c": 3}}]
+    assert meta["additionalProperties"] is False
+    assert meta["required"] == ["name"]
 
 
 def test_search_github_mcp_snapshot() -> None:
