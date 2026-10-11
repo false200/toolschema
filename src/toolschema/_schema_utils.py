@@ -23,7 +23,8 @@ def json_schema_default(value: Any) -> Any:
     written as objects whose keys match ``model_json_schema()``, or as the
     root value for a root model. A cyclic default raises ``ValueError``.
     Bytes are standard base64, matching ``contentEncoding``. A value that is
-    still not JSON, including a non-finite float, raises ``ValueError``.
+    still not JSON, including a non-finite float, a decimal that does not fit
+    in a float, or an object key that is not a string, raises ``ValueError``.
     """
     return _json_schema_default(value, frozenset())
 
@@ -43,7 +44,10 @@ def _json_schema_default(value: Any, seen: frozenset[int]) -> Any:
         integral = value.to_integral_value()
         if value == integral:
             return int(integral)
-        return float(value)
+        rendered = float(value)
+        if not math.isfinite(rendered):
+            raise ValueError(f"Cannot serialize non-finite decimal default {value!r}")
+        return rendered
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, os.PathLike) and not isinstance(value, (str, bytes)):
@@ -73,7 +77,14 @@ def _json_schema_default(value: Any, seen: frozenset[int]) -> Any:
             return [_json_schema_default(item, child_seen) for item in value]
         if isinstance(value, list):
             return [_json_schema_default(item, child_seen) for item in value]
-        return {key: _json_schema_default(item, child_seen) for key, item in value.items()}
+        rendered_object: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(
+                    f"Cannot serialize default object key of type {type(key).__name__}"
+                )
+            rendered_object[key] = _json_schema_default(item, child_seen)
+        return rendered_object
     if value is None or isinstance(value, str):
         return value
     if isinstance(value, bool):

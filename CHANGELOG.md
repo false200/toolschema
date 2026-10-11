@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `Field(min_length=...)` and `Field(max_length=...)` on a union apply to every branch. `Annotated[str | list[str], Field(min_length=1)]` rejected `""` and accepted `[]`. `list[str] | dict[str, str]` accepted both `[]` and `{}`. `minLength` stays beside `anyOf` when a string is one of the options.
+- `to_gemini()` uppercases types inside `oneOf` and `allOf`. A model schema that used those keywords kept `string` and `integer` while the rest of the payload used `STRING` and `INTEGER`.
+- `to_openai(strict=True)` no longer rewrites `default`, `const`, or `enum` values. A default of `{"type": "object", "properties": {"a": 1}}` gained `additionalProperties` and `required`.
+- A default object whose key is not a string raises `ValueError`. `{1: "a"}` was stored with an integer key, while `json.dumps` wrote `"1"`, so `validate({})` filled a different object than the published schema. A decimal that does not fit in a float raises the same way, instead of becoming `Infinity`.
 - `Field(min_length=...)` and `Field(max_length=...)` on a dict or other object become `minProperties` and `maxProperties`. They were emitted as `minLength` and `maxLength`, so `validate()` accepted `{}`.
 - `validate()` requires exactly one `oneOf` branch, then checks sibling keywords. A model schema that used `oneOf` used to accept every value. Nested defaults inside the matching branch are filled.
 - `toolschema export` lists functions only. Imported callables such as `Annotated` and `Field` were exported as tools. A skipped function now prints a warning.

@@ -6,6 +6,10 @@ from typing import Any
 from toolschema._ir import ToolDefinition
 from toolschema._schema_utils import strip_canonical_meta
 
+# These hold instance data. A default shaped like ``{"type": "object", ...}``
+# is a value, and rewriting it changes the value the model is shown.
+_INSTANCE_KEYS = frozenset({"const", "default", "enum", "example", "examples"})
+
 
 def _strict_schema(node: Any) -> None:
     """Mark every object schema closed and list each of its properties as required.
@@ -25,7 +29,9 @@ def _strict_schema(node: Any) -> None:
         node["additionalProperties"] = False
         if properties:
             node["required"] = list(properties)
-    for value in node.values():
+    for key, value in node.items():
+        if key in _INSTANCE_KEYS:
+            continue
         if isinstance(value, (dict, list)):
             _strict_schema(value)
 

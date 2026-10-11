@@ -61,7 +61,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 
 A dataclass, TypedDict, or NamedTuple that refers to itself (or cycles through another structured type) is emitted the same way: `$ref` plus `$defs` on the enclosing document. Nested structured types that are not part of a cycle stay inlined.
 
-`TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints). On a list or set, `min_length` and `max_length` are `minItems` and `maxItems`. On a dict or other object, they are `minProperties` and `maxProperties`.
+`TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints). On a list or set, `min_length` and `max_length` are `minItems` and `maxItems`. On a dict or other object, they are `minProperties` and `maxProperties`. A union applies that keyword on each matching branch. `minLength` stays beside `anyOf` when one branch is a string, so `Annotated[str | list[str], Field(min_length=1)]` rejects both `""` and `[]`.
 
 ## Annotated
 

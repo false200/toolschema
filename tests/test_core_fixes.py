@@ -118,6 +118,28 @@ def test_non_json_defaults_are_serialized() -> None:
     assert props["color"] == {"enum": ["red"], "default": "red"}
 
 
+def test_non_json_object_keys_and_overflow_decimals_raise() -> None:
+    int_key = {1: "a"}
+
+    def labels(tags: dict = int_key) -> None:
+        """Label."""
+
+    with pytest.raises(ValueError, match="object key"):
+        schema(labels)
+
+    from decimal import localcontext
+
+    with localcontext() as ctx:
+        ctx.prec = 400
+        amount = Decimal("2e308") + Decimal("1e-80")
+
+    def unbounded(limit: float = amount) -> None:
+        """Limit."""
+
+    with pytest.raises(ValueError, match="non-finite"):
+        schema(unbounded)
+
+
 def test_non_json_scalar_defaults_raise() -> None:
     def marker(token: str = object()) -> None:
         """Mark."""

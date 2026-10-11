@@ -89,7 +89,7 @@ def merge_field_into_schema(base_schema: dict[str, Any], extras: dict[str, Any])
     arrays = _schemas_of(base_schema, "array")
     objects = None if arrays else _schemas_of(base_schema, "object")
     if not arrays and not objects:
-        return {**base_schema, **extras}
+        return _length_on_mixed_union(base_schema, extras)
 
     extras = dict(extras)
     length: dict[str, Any] = {}
@@ -109,3 +109,50 @@ def merge_field_into_schema(base_schema: dict[str, Any], extras: dict[str, Any])
         )
         branches.append({**branch, **length} if apply else branch)
     return {**base_schema, "anyOf": branches, **extras}
+
+
+def _length_on_mixed_union(base_schema: dict[str, Any], extras: dict[str, Any]) -> dict[str, Any]:
+    """Put length on each array or object branch of a mixed union.
+
+    ``str | None`` has no array or object branch, so ``minLength`` stays beside
+    ``anyOf``. ``str | list[str]`` keeps that sibling keyword and also sets
+    ``minItems`` on the list. A union with no string drops ``minLength``.
+    """
+    branches = base_schema.get("anyOf")
+    if not isinstance(branches, list):
+        return {**base_schema, **extras}
+
+    items: dict[str, Any] = {}
+    properties: dict[str, Any] = {}
+    if "minLength" in extras:
+        items["minItems"] = extras["minLength"]
+        properties["minProperties"] = extras["minLength"]
+    if "maxLength" in extras:
+        items["maxItems"] = extras["maxLength"]
+        properties["maxProperties"] = extras["maxLength"]
+
+    changed = False
+    has_string = False
+    placed: list[Any] = []
+    for branch in branches:
+        if not isinstance(branch, dict) or branch.get("type") == "null":
+            placed.append(branch)
+            continue
+        if branch.get("type") == "array" and "prefixItems" not in branch:
+            placed.append({**branch, **items})
+            changed = True
+        elif branch.get("type") == "object":
+            placed.append({**branch, **properties})
+            changed = True
+        else:
+            if branch.get("type") in {None, "string"}:
+                has_string = True
+            placed.append(branch)
+    if not changed:
+        return {**base_schema, **extras}
+
+    rest = dict(extras)
+    if not has_string:
+        rest.pop("minLength", None)
+        rest.pop("maxLength", None)
+    return {**base_schema, "anyOf": placed, **rest}

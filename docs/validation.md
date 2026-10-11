@@ -46,7 +46,7 @@ else:
 | `contentEncoding: base64` | `bytes` text must be standard base64 |
 | Defaults | Missing optional fields filled from schema, including nested objects. Dataclass, `NamedTuple`, and model instance defaults are JSON values |
 
-`Annotated[str | None, Field(min_length=1)]` puts `minLength` next to `anyOf`, not inside the string branch. `validate()` still rejects `""`. `None` stays valid, because `minLength` applies only to strings. Python 3.10's `get_type_hints` wraps that annotation in another `Optional` when annotations are postponed; the generated schema is normalized to this same shape.
+`Annotated[str | None, Field(min_length=1)]` puts `minLength` next to `anyOf`, not inside the string branch. `validate()` still rejects `""`. `None` stays valid, because `minLength` applies only to strings. A union of a string and a list or object also sets `minItems` or `minProperties` on that branch, so `[]` and `{}` are rejected too. Python 3.10's `get_type_hints` wraps that annotation in another `Optional` when annotations are postponed; the generated schema is normalized to this same shape.
 
 `const` uses JSON equality. `true` is not `1`, and `1` matches `1.0` when the schema has no stricter `type`. Object key order does not matter. Pydantic represents `Literal["a"]` as `{"const": "a", "type": "string"}`, so a discriminated-union tag has to match that constant.
 
