@@ -44,7 +44,7 @@ else:
 | `oneOf` | Exactly one branch matches, then sibling keywords are checked |
 | `allOf` | Every branch must match, then sibling keywords are checked |
 | `contentEncoding: base64` | `bytes` text must be standard base64 |
-| Defaults | Missing optional fields filled from schema, including nested objects. Dataclass, `NamedTuple`, and model instance defaults are JSON values |
+| Defaults | Missing optional fields filled from schema, including nested objects. `None` is accepted when the annotation did not already allow null. Dataclass, `NamedTuple`, and model instance defaults are JSON values |
 
 `Annotated[str | None, Field(min_length=1)]` puts `minLength` next to `anyOf`, not inside the string branch. `validate()` still rejects `""`. `None` stays valid, because `minLength` applies only to strings. A union of a string and a list or object also sets `minItems` or `minProperties` on that branch, so `[]` and `{}` are rejected too. Python 3.10's `get_type_hints` wraps that annotation in another `Optional` when annotations are postponed; the generated schema is normalized to this same shape.
 

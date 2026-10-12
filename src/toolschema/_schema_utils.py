@@ -12,6 +12,53 @@ from typing import Any
 from uuid import UUID
 
 
+def schema_with_default(schema: dict[str, Any], value: Any) -> dict[str, Any]:
+    """Attach a JSON default, and allow null when that default is None.
+
+    ``name: str = None`` is a common way to say the argument may be omitted.
+    The annotation does not mention null, so a later ``validate({})`` would
+    fill ``None`` and then reject it. ``str | None`` already allows null and
+    is left as it is.
+    """
+    rendered = json_schema_default(value)
+    if rendered is not None or _schema_allows_null(schema):
+        return {**schema, "default": rendered}
+    body = dict(schema)
+    lifted: dict[str, Any] = {}
+    for key in ("description", "title"):
+        if key in body:
+            lifted[key] = body.pop(key)
+    lifted["anyOf"] = [body, {"type": "null"}]
+    lifted["default"] = None
+    return lifted
+
+
+def _schema_allows_null(schema: dict[str, Any]) -> bool:
+    """Return whether ``schema`` already accepts a JSON null."""
+    if "const" in schema:
+        return schema["const"] is None
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list):
+        return any(item is None for item in enum_values)
+    for key in ("anyOf", "oneOf"):
+        branches = schema.get(key)
+        if isinstance(branches, list):
+            return any(
+                isinstance(branch, dict) and _schema_allows_null(branch) for branch in branches
+            )
+    # A ``$ref`` points at another type. Null is not implied.
+    if "$ref" in schema or "allOf" in schema:
+        return False
+    types = schema.get("type")
+    if types is None:
+        return True
+    if types == "null":
+        return True
+    if isinstance(types, list):
+        return "null" in types
+    return False
+
+
 def json_schema_default(value: Any) -> Any:
     """Return a JSON-compatible copy of a Python default.
 

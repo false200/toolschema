@@ -48,6 +48,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 | `Literal[Color.RED]` | `{"enum": ["red"]}` (the member value) |
 | `class Color(str, Enum)` | `{"enum": ["red", "green", ...]}` |
 | `NewType("UserId", str)` | schema of `str` |
+| `type UserId = int` | schema of `int`. A generic alias (`type Box[T] = ...`) is not supported. A recursive alias raises `TypeError`. |
 | `Final[int]` | schema of `int` |
 
 ## Structured types
@@ -79,7 +80,7 @@ Annotated[str, "City name"]
 
 ## Defaults
 
-Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`. Enum defaults are written as the member value (`Color.RED` → `"red"`), the same values listed in `enum`. Tuple and set defaults are written as arrays. Dataclass and `NamedTuple` instances are written as objects, including when they are nested inside another default. A Pydantic model instance is written as an object whose keys are the validation aliases from `model_json_schema()` (`Field(alias="fullName")`, not `serialization_alias`). A Pydantic root model is written as that root value. Datetime, date, time, UUID, path, and decimal defaults are written as JSON strings or numbers. Bytes defaults are standard base64, matching `contentEncoding`. List and dict defaults are copied, so mutating a filled value does not change the function default or the next `validate()` result. Nested object defaults are filled too. A cyclic default raises `ValueError`. A default that is still not JSON, including `object()` or a non-finite float, raises `ValueError`.
+Function parameter defaults become schema `"default"` keys. Parameters with defaults are **not** in `required`. A default of `None` on a type that does not already allow null (`name: str = None`, a `Literal`, an enum, or a `$ref`) is stored as `anyOf` that type and `null`, so `validate({})` fills `None`. `str | None = None` is unchanged. Enum defaults are written as the member value (`Color.RED` → `"red"`), the same values listed in `enum`. Tuple and set defaults are written as arrays. Dataclass and `NamedTuple` instances are written as objects, including when they are nested inside another default. `field(default_factory=list)` and `field(default_factory=dict)` become `[]` and `{}`. Other factories are left unset. A Pydantic model instance is written as an object whose keys are the validation aliases from `model_json_schema()` (`Field(alias="fullName")`, not `serialization_alias`). A Pydantic root model is written as that root value. Datetime, date, time, UUID, path, and decimal defaults are written as JSON strings or numbers. Bytes defaults are standard base64, matching `contentEncoding`. List and dict defaults are copied, so mutating a filled value does not change the function default or the next `validate()` result. Nested object defaults are filled too. A cyclic default raises `ValueError`. A default that is still not JSON, including `object()` or a non-finite float, raises `ValueError`.
 
 ```python
 def f(a: int, b: int = 1): ...
