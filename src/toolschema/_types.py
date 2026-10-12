@@ -10,7 +10,12 @@ from contextvars import ContextVar
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from toolschema._fields import extract_annotated_metadata, merge_field_into_schema
-from toolschema._schema_utils import hoist_defs, inline_refs, json_schema_default
+from toolschema._schema_utils import (
+    hoist_defs,
+    inline_refs,
+    json_schema_default,
+    schema_with_default,
+)
 
 JSON_SCHEMA_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
@@ -164,6 +169,7 @@ class _StructState:
 
 
 _STRUCT_STATE: ContextVar[_StructState | None] = ContextVar("toolschema_struct_state", default=None)
+_ALIAS_SEEN: ContextVar[frozenset[int]] = ContextVar("toolschema_alias_seen", default=frozenset())
 
 
 def _definition_name(tp: Any, state: _StructState) -> str:
@@ -265,10 +271,12 @@ def _dataclass_body(tp: type[Any]) -> dict[str, Any]:
         if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
             required.append(field.name)
         elif field.default is not dataclasses.MISSING:
-            properties[field.name] = {
-                **properties[field.name],
-                "default": json_schema_default(field.default),
-            }
+            properties[field.name] = schema_with_default(properties[field.name], field.default)
+        elif field.default_factory in (list, dict):
+            # shortcut: list and dict only, call other factories when that default must be shown.
+            properties[field.name] = schema_with_default(
+                properties[field.name], field.default_factory()
+            )
     schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
@@ -300,10 +308,7 @@ def _namedtuple_body(tp: type[Any]) -> dict[str, Any]:
     for name in tp._fields:
         properties[name] = _type_to_schema(hints.get(name, Any))
         if name in defaults:
-            properties[name] = {
-                **properties[name],
-                "default": json_schema_default(defaults[name]),
-            }
+            properties[name] = schema_with_default(properties[name], defaults[name])
         else:
             required.append(name)
     schema: dict[str, Any] = {
@@ -372,8 +377,31 @@ def type_to_schema(tp: Any) -> dict[str, Any]:
     return hoist_defs(_type_to_schema(tp))
 
 
+def _alias_value(tp: Any) -> Any | None:
+    """Return the target of a non-generic ``type Name = ...`` alias."""
+    if type(tp).__name__ != "TypeAliasType":
+        return None
+    if getattr(tp, "__type_params__", ()):
+        return None
+    value = getattr(tp, "__value__", None)
+    if value is None:
+        return None
+    return value
+
+
 def _type_to_schema(tp: Any) -> dict[str, Any]:
     tp = _collapse_redundant_none(tp)
+    alias = _alias_value(tp)
+    if alias is not None:
+        seen = _ALIAS_SEEN.get()
+        if id(tp) in seen:
+            name = getattr(tp, "__name__", tp)
+            raise TypeError(f"Unsupported recursive type alias: {name!r}")
+        token = _ALIAS_SEEN.set(seen | {id(tp)})
+        try:
+            return _type_to_schema(alias)
+        finally:
+            _ALIAS_SEEN.reset(token)
     origin = get_origin(tp)
     args = get_args(tp)
 

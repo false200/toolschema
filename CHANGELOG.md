@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A default of `None` is nullable. `name: str = None` used to publish `{"type": "string", "default": null}`, so `validate({})` filled `None` and rejected it. The same happened for `Literal`, enums, dataclass fields, `NamedTuple` fields, and a recursive `$ref`. `str | None = None` is unchanged. `field(default_factory=list)` and `field(default_factory=dict)` are filled as `[]` and `{}`.
+- A non-generic alias (`type UserId = int`) uses the schema of its target. A recursive alias raises `TypeError` instead of recursing forever. Generic aliases stay unsupported.
+
 - `Field(min_length=...)` and `Field(max_length=...)` on a union apply to every branch. `Annotated[str | list[str], Field(min_length=1)]` rejected `""` and accepted `[]`. `list[str] | dict[str, str]` accepted both `[]` and `{}`. `minLength` stays beside `anyOf` when a string is one of the options.
 - `to_gemini()` uppercases types inside `oneOf` and `allOf`. A model schema that used those keywords kept `string` and `integer` while the rest of the payload used `STRING` and `INTEGER`.
 - `to_openai(strict=True)` no longer rewrites `default`, `const`, or `enum` values. A default of `{"type": "object", "properties": {"a": 1}}` gained `additionalProperties` and `required`.

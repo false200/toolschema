@@ -5,12 +5,18 @@ from __future__ import annotations
 import dataclasses
 import enum
 import json
+import sys
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Final, Literal, NamedTuple, NewType, TypedDict
 from uuid import UUID
+
+try:
+    from typing import TypeAliasType
+except ImportError:  # Python 3.10
+    from typing_extensions import TypeAliasType
 
 import pytest
 
@@ -21,6 +27,8 @@ from toolschema._validate import ValidationFailure, ValidationSuccess, validate_
 _ITEMS = ["a"]
 _NESTED = {"nums": [1]}
 UserId = NewType("UserId", str)
+_UserId = TypeAliasType("UserId", int)
+_CityName = TypeAliasType("CityName", Annotated[str, Field(min_length=2)])
 
 
 class _Color(enum.Enum):
@@ -926,3 +934,128 @@ def test_pydantic_model_instance_default_matches_validation_alias() -> None:
     saved = tool.validate({})
     assert isinstance(saved, ValidationSuccess)
     assert saved.value["outer"]["fullName"] == "Ada Lovelace"
+
+
+class _NonePoint(NamedTuple):
+    name: str = None
+
+
+@dataclasses.dataclass
+class _FactoryBag:
+    items: list[int] = dataclasses.field(default_factory=list)
+    meta: dict[str, str] = dataclasses.field(default_factory=dict)
+
+
+@dataclasses.dataclass
+class _FactoryRow:
+    tags: list[str] = dataclasses.field(default_factory=lambda: ["x"])
+
+
+@dataclasses.dataclass
+class _NoneChild:
+    label: str
+    child: _NoneChild = None
+
+
+def test_none_default_is_nullable() -> None:
+    def greet(name: str = None) -> str:
+        """Say hello."""
+        return f"Hello, {name}"
+
+    prop = schema(greet).parameters["properties"]["name"]
+    assert prop == {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None}
+    filled = schema(greet).validate({})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"name": None}
+    assert isinstance(schema(greet).validate({"name": "Ada"}), ValidationSuccess)
+
+    def city(name: Annotated[str, Field(description="City", min_length=1)] = None) -> None:
+        """City."""
+
+    city_prop = schema(city).parameters["properties"]["name"]
+    assert city_prop == {
+        "description": "City",
+        "anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}],
+        "default": None,
+    }
+    assert isinstance(schema(city).validate({}), ValidationSuccess)
+    assert isinstance(schema(city).validate({"name": ""}), ValidationFailure)
+    assert isinstance(schema(city).validate({"name": "Paris"}), ValidationSuccess)
+
+    def optional(name: str | None = None) -> None:
+        """Optional."""
+
+    assert schema(optional).parameters["properties"]["name"] == {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "default": None,
+    }
+
+    def choose(kind: Literal["a", "b"] = None) -> None:
+        """Choose."""
+
+    chosen = schema(choose).validate({})
+    assert isinstance(chosen, ValidationSuccess)
+    assert chosen.value == {"kind": None}
+    assert isinstance(schema(choose).validate({"kind": "c"}), ValidationFailure)
+    assert isinstance(schema(choose).validate({"kind": "a"}), ValidationSuccess)
+
+    def take(point: _NonePoint) -> None:
+        """Take."""
+
+    assert isinstance(schema(take).validate({"point": {}}), ValidationSuccess)
+    assert schema(take).validate({"point": {}}).value["point"]["name"] is None
+
+    def walk(node: _NoneChild) -> None:
+        """Walk."""
+
+    walked = schema(walk).validate({"node": {"label": "a"}})
+    assert isinstance(walked, ValidationSuccess)
+    assert walked.value["node"]["child"] is None
+    explicit = schema(walk).validate({"node": {"label": "a", "child": None}})
+    assert isinstance(explicit, ValidationSuccess)
+
+
+def test_list_and_dict_default_factory_are_filled() -> None:
+    def hold(bag: _FactoryBag) -> None:
+        """Hold."""
+
+    props = schema(hold).parameters["properties"]["bag"]["properties"]
+    assert props["items"]["default"] == []
+    assert props["meta"]["default"] == {}
+    filled = schema(hold).validate({"bag": {}})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value["bag"] == {"items": [], "meta": {}}
+    filled.value["bag"]["items"].append(1)
+    again = schema(hold).validate({"bag": {}})
+    assert isinstance(again, ValidationSuccess)
+    assert again.value["bag"]["items"] == []
+
+    def save(row: _FactoryRow) -> None:
+        """Save."""
+
+    assert "default" not in schema(save).parameters["properties"]["row"]["properties"]["tags"]
+
+
+def test_type_alias_uses_the_aliased_schema() -> None:
+    def greet(user: _UserId) -> None:
+        """Greet."""
+
+    assert schema(greet).parameters["properties"]["user"] == {"type": "integer"}
+
+    def city(name: _CityName) -> None:
+        """City."""
+
+    assert schema(city).parameters["properties"]["name"] == {"type": "string", "minLength": 2}
+
+
+def test_recursive_type_alias_is_rejected() -> None:
+    if sys.version_info < (3, 12):
+        pytest.skip("PEP 695 type statement")
+    namespace: dict[str, Any] = {}
+    exec(
+        'type Node = list[Node] | None\ndef walk(node: Node) -> None:\n    """Walk."""\n',
+        namespace,
+        namespace,
+    )
+    with pytest.raises(TypeError, match="recursive"):
+        schema(namespace["walk"])
