@@ -7,7 +7,7 @@ import enum
 import json
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Final, Literal, NamedTuple, NewType, TypedDict
@@ -35,6 +35,16 @@ class _Color(enum.Enum):
     RED = "red"
 
 
+class _Perm(enum.Flag):
+    R = 1
+    W = 2
+
+
+class _Bits(enum.IntFlag):
+    R = 1
+    W = 2
+
+
 class _Point(NamedTuple):
     x: int
     y: str = "n"
@@ -52,6 +62,7 @@ class _Blob:
 
 
 _BLOB = _Blob()
+_UID = UUID("12345678-1234-5678-1234-567812345678")
 
 
 _TAGS = {"b", "a"}
@@ -225,6 +236,69 @@ def test_redundant_optional_around_annotated_union_keeps_sibling_constraints() -
             {"type": "null"},
         ],
     }
+
+
+def test_flag_accepts_zero_and_combinations() -> None:
+    def set_perm(p: _Perm = _Perm.R | _Perm.W) -> None:
+        """Set permission bits."""
+
+    prop = schema(set_perm).parameters["properties"]["p"]
+    assert prop["enum"] == [0, 1, 2, 3]
+    assert prop["default"] == 3
+    filled = schema(set_perm).validate({})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"p": 3}
+    assert isinstance(schema(set_perm).validate({"p": 0}), ValidationSuccess)
+    assert isinstance(schema(set_perm).validate({"p": 4}), ValidationFailure)
+
+    class Sparse(enum.Flag):
+        R = 1
+        X = 4
+
+    assert type_to_schema(Sparse)["enum"] == [0, 1, 4, 5]
+
+    def set_bits(p: _Bits = _Bits.R | _Bits.W) -> None:
+        """Set bits."""
+
+    assert schema(set_bits).parameters["properties"]["p"] == {"type": "integer", "default": 3}
+    assert isinstance(schema(set_bits).validate({"p": 4}), ValidationSuccess)
+    assert isinstance(schema(set_bits).validate({"p": True}), ValidationFailure)
+
+    wide = enum.Flag("Wide", {f"B{i}": 1 << i for i in range(9)})
+    assert type_to_schema(wide) == {"type": "integer"}
+
+
+def test_stdlib_scalars_and_bare_tuple() -> None:
+    def record(
+        when: datetime,
+        day: date = date(2020, 1, 2),
+        clock: time = time(12, 0, 0),
+        uid: UUID = _UID,
+        path: Path = Path("/tmp/x"),
+        amount: Decimal = Decimal("1.5"),
+        pair: tuple = (1, "a"),
+    ) -> None:
+        """Record a value."""
+
+    props = schema(record).parameters["properties"]
+    assert props["when"] == {"type": "string"}
+    assert props["day"] == {"type": "string", "format": "date", "default": "2020-01-02"}
+    assert props["clock"] == {"type": "string", "default": "12:00:00"}
+    assert props["uid"]["format"] == "uuid"
+    assert props["path"] == {"type": "string", "default": "/tmp/x"}
+    assert props["amount"] == {"type": "number", "default": 1.5}
+    assert props["pair"] == {"type": "array", "default": [1, "a"]}
+    assert "when" in schema(record).parameters["required"]
+    assert "pair" not in schema(record).parameters["required"]
+
+    filled = schema(record).validate({"when": "2020-01-01T00:00:00"})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value["day"] == "2020-01-02"
+    assert filled.value["amount"] == 1.5
+    bad_day = schema(record).validate({"when": "x", "day": "2020-13-01"})
+    assert isinstance(bad_day, ValidationFailure)
+    bad_uid = schema(record).validate({"when": "x", "uid": "12345678123456781234567812345678"})
+    assert isinstance(bad_uid, ValidationFailure)
 
 
 def test_common_aliases_and_containers() -> None:

@@ -7,7 +7,11 @@ import enum
 import importlib
 import types
 from contextvars import ContextVar
+from datetime import date, datetime, time
+from decimal import Decimal
+from pathlib import PurePath
 from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
+from uuid import UUID
 
 from toolschema._fields import extract_annotated_metadata, merge_field_into_schema
 from toolschema._schema_utils import (
@@ -321,6 +325,29 @@ def _namedtuple_body(tp: type[Any]) -> dict[str, Any]:
     return schema
 
 
+def _flag_to_schema(tp: type[enum.Enum]) -> dict[str, Any]:
+    """Schema for every value ``tp(...)`` accepts.
+
+    Listing only the members drops ``0`` and combinations such as ``R | W``.
+    ``IntFlag`` accepts any integer, including bits that are not defined.
+    """
+    if issubclass(tp, enum.IntFlag):
+        return {"type": "integer"}
+    members = list(tp)
+    if len(members) > 8:
+        # shortcut: 8 members, list every combination when a flag is wider.
+        return {"type": "integer"}
+    values: list[int] = []
+    for mask in range(1 << len(members)):
+        combined = 0
+        for index, member in enumerate(members):
+            if mask & (1 << index):
+                combined |= member.value
+        if combined not in values:
+            values.append(combined)
+    return {"enum": values}
+
+
 def _array_schema(item_type: Any, *, unique: bool = False) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "array", "items": _type_to_schema(item_type)}
     if unique:
@@ -463,6 +490,8 @@ def _type_to_schema(tp: Any) -> dict[str, Any]:
         return {"enum": [json_schema_default(value) for value in args]}
 
     if isinstance(tp, type) and issubclass(tp, enum.Enum):
+        if issubclass(tp, enum.Flag):
+            return _flag_to_schema(tp)
         return {"enum": [json_schema_default(member) for member in tp]}
 
     if isinstance(tp, type) and _is_typeddict(tp):
@@ -481,6 +510,17 @@ def _type_to_schema(tp: Any) -> dict[str, Any]:
         if tp is str:
             return {"type": "string"}
         return {"type": "string", "contentEncoding": "base64"}
+    if tp is datetime or tp is time:
+        # shortcut: no format, add date-time/time when naive defaults include a timezone.
+        return {"type": "string"}
+    if tp is date:
+        return {"type": "string", "format": "date"}
+    if tp is UUID:
+        return {"type": "string", "format": "uuid"}
+    if tp is Decimal:
+        return {"type": "number"}
+    if isinstance(tp, type) and issubclass(tp, PurePath):
+        return {"type": "string"}
     if tp is int:
         return {"type": "integer"}
     if tp is float:
@@ -489,7 +529,7 @@ def _type_to_schema(tp: Any) -> dict[str, Any]:
         return {"type": "boolean"}
     if tp is dict or tp is collections_abc.Mapping or tp is collections_abc.MutableMapping:
         return {"type": "object"}
-    if tp is list or tp in (collections_abc.Sequence, collections_abc.MutableSequence):
+    if tp in (list, tuple, collections_abc.Sequence, collections_abc.MutableSequence):
         return {"type": "array"}
     if tp in (set, frozenset, collections_abc.Set, collections_abc.MutableSet):
         return {"type": "array", "uniqueItems": True}
