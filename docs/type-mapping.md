@@ -21,6 +21,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 |--------|-------------|
 | `list[T]` / `Sequence[T]` | `{"type": "array", "items": schema(T)}` |
 | `list` (bare) | `{"type": "array"}` |
+| `tuple` (bare) | `{"type": "array"}` |
 | `set[T]` / `frozenset[T]` | `{"type": "array", "items": schema(T), "uniqueItems": true}` |
 | `dict[str, T]` / `Mapping[str, T]` | `{"type": "object", "additionalProperties": schema(T)}` |
 | `dict` (bare) | `{"type": "object"}` |
@@ -47,6 +48,12 @@ Implemented in `toolschema._types.type_to_schema()`.
 | `Literal[1, 2]` | `{"enum": [1, 2]}` |
 | `Literal[Color.RED]` | `{"enum": ["red"]}` (the member value) |
 | `class Color(str, Enum)` | `{"enum": ["red", "green", ...]}` |
+| `class Perm(Flag)` | `{"enum": [0, 1, 2, 3]}` (zero and every combination). `IntFlag` is an integer, because any bit pattern is allowed. More than 8 members stays an integer. |
+| `datetime`, `time` | `{"type": "string"}` |
+| `date` | `{"type": "string", "format": "date"}` |
+| `UUID` | `{"type": "string", "format": "uuid"}` |
+| `Decimal` | `{"type": "number"}` |
+| `Path` | `{"type": "string"}` |
 | `NewType("UserId", str)` | schema of `str` |
 | `type UserId = int` | schema of `int`. A generic alias (`type Box[T] = ...`) is not supported. A recursive alias raises `TypeError`. |
 | `Final[int]` | schema of `int` |

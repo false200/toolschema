@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `Flag` schemas list zero and every combination of members. Listing only the members rejected `0` and `R | W`, including a default of `Perm.R | Perm.W`. `IntFlag` is an integer. A flag with more than 8 members stays an integer.
+- `datetime`, `date`, `time`, `UUID`, `Decimal`, `Path`, and a bare `tuple` map to JSON Schema. Those annotations used to raise `TypeError`. `date` and `UUID` keep their formats. `datetime` and `time` stay plain strings, because a naive default has no timezone.
+
 - A default of `None` is nullable. `name: str = None` used to publish `{"type": "string", "default": null}`, so `validate({})` filled `None` and rejected it. The same happened for `Literal`, enums, dataclass fields, `NamedTuple` fields, and a recursive `$ref`. `str | None = None` is unchanged. `field(default_factory=list)` and `field(default_factory=dict)` are filled as `[]` and `{}`.
 - A non-generic alias (`type UserId = int`) uses the schema of its target. A recursive alias raises `TypeError` instead of recursing forever. Generic aliases stay unsupported.
 
