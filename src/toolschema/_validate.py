@@ -625,6 +625,23 @@ def _validate_value(
             if isinstance(items_schema, dict):
                 for index, item in enumerate(value[len(prefix_items) :], start=len(prefix_items)):
                     issues.extend(_validate_value(item, items_schema, path + (index,), defs, seen))
+            elif items_schema is False and len(value) > len(prefix_items):
+                issues.append(
+                    _issue(
+                        "Array has extra items",
+                        path=path,
+                        kind=ValidationIssueKind.CONSTRAINT,
+                    )
+                )
+        elif schema.get("items") is False:
+            if value:
+                issues.append(
+                    _issue(
+                        "Array has extra items",
+                        path=path,
+                        kind=ValidationIssueKind.CONSTRAINT,
+                    )
+                )
         elif isinstance(schema.get("items"), dict):
             for index, item in enumerate(value):
                 issues.extend(_validate_value(item, schema["items"], path + (index,), defs, seen))
