@@ -7,7 +7,7 @@ from typing import Any, get_type_hints
 
 from toolschema._ir import ToolDefinition
 from toolschema._schema_utils import hoist_defs, schema_with_default
-from toolschema._types import JSON_SCHEMA_2020_12, type_to_schema
+from toolschema._types import _SELF_CLASS, JSON_SCHEMA_2020_12, type_to_schema
 
 
 @dataclass(frozen=True)
@@ -169,9 +169,13 @@ def schema(fn: Callable[..., Any]) -> ToolDefinition:
         else _parse_docstring_description(target.__doc__)
     )
 
-    return ToolDefinition(
-        name=name,
-        description=description,
-        parameters=_build_parameters_schema(target),
-        output=_build_output_schema(target),
-    )
+    token = _SELF_CLASS.set(_defining_class(target))
+    try:
+        return ToolDefinition(
+            name=name,
+            description=description,
+            parameters=_build_parameters_schema(target),
+            output=_build_output_schema(target),
+        )
+    finally:
+        _SELF_CLASS.reset(token)

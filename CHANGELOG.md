@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `Flag` enum values are only those the flag accepts. `R | W` was listed for a flag that rejects that combination, and an inverted member (`NOT_R = ~1`) was missing, so `validate({})` rejected a default of `NOT_R`.
+- `Self` in a dataclass, TypedDict, or NamedTuple is that type, including `child: Self | None`. On a method, `Self` is the class that defined the method. Both used to raise `TypeError`.
+- Dataclass fields with `init=False` are omitted. They were required, so `validate` demanded a value the constructor refuses.
+
 - `Flag` schemas list zero and every combination of members. Listing only the members rejected `0` and `R | W`, including a default of `Perm.R | Perm.W`. `IntFlag` is an integer. A flag with more than 8 members stays an integer.
 - `datetime`, `date`, `time`, `UUID`, `Decimal`, `Path`, and a bare `tuple` map to JSON Schema. Those annotations used to raise `TypeError`. `date` and `UUID` keep their formats. `datetime` and `time` stay plain strings, because a naive default has no timezone.
 

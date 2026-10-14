@@ -18,6 +18,11 @@ try:
 except ImportError:  # Python 3.10
     from typing_extensions import TypeAliasType
 
+try:
+    from typing import Self
+except ImportError:  # Python 3.10
+    from typing_extensions import Self
+
 import pytest
 
 from toolschema import Field, schema, tool
@@ -38,6 +43,29 @@ class _Color(enum.Enum):
 class _Perm(enum.Flag):
     R = 1
     W = 2
+
+
+class _Inv(enum.Flag):
+    R = 1
+    W = 2
+    NOT_R = ~1
+
+
+@dataclasses.dataclass
+class _Box:
+    x: int
+    y: int = dataclasses.field(init=False)
+    z: int = dataclasses.field(init=False, default=0)
+
+
+@dataclasses.dataclass
+class _Node:
+    value: int
+    child: Self | None = None
+
+    def adopt(self, other: Self) -> Self:
+        """Adopt a child."""
+        return other
 
 
 class _Bits(enum.IntFlag):
@@ -266,6 +294,56 @@ def test_flag_accepts_zero_and_combinations() -> None:
 
     wide = enum.Flag("Wide", {f"B{i}": 1 << i for i in range(9)})
     assert type_to_schema(wide) == {"type": "integer"}
+
+    inv = type_to_schema(_Inv)
+    for value in inv["enum"]:
+        _Inv(value)
+    for member in _Inv.__members__.values():
+        assert member.value in inv["enum"]
+    assert 3 not in inv["enum"]
+    assert -2 in inv["enum"]
+
+    def set_inv(p: _Inv = _Inv.NOT_R) -> None:
+        """Set an inverted flag."""
+
+    assert schema(set_inv).parameters["properties"]["p"]["default"] == -2
+    assert isinstance(schema(set_inv).validate({}), ValidationSuccess)
+    assert isinstance(schema(set_inv).validate({"p": 3}), ValidationFailure)
+
+
+def test_dataclass_init_false_fields_are_omitted() -> None:
+    result = type_to_schema(_Box)
+    assert list(result["properties"]) == ["x"]
+    assert result["required"] == ["x"]
+
+    def make(box: _Box) -> None:
+        """Make a box."""
+
+    filled = schema(make).validate({"box": {"x": 1}})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"box": {"x": 1}}
+    assert isinstance(schema(make).validate({"box": {"x": 1, "y": 2}}), ValidationFailure)
+
+
+def test_self_annotation_is_the_enclosing_type() -> None:
+    result = type_to_schema(_Node)
+    assert result["$ref"] == "#/$defs/_Node"
+    child = result["$defs"]["_Node"]["properties"]["child"]
+    assert child["anyOf"][0] == {"$ref": "#/$defs/_Node"}
+    assert child["anyOf"][1] == {"type": "null"}
+    assert child["default"] is None
+
+    tool = schema(_Node.adopt)
+    assert "self" not in tool.parameters["properties"]
+    other = tool.parameters["properties"]["other"]
+    assert other["$ref"] == "#/$defs/_Node"
+    assert "$defs" not in other
+    assert tool.output is not None
+    assert tool.output["$ref"] == "#/$defs/_Node"
+    adopted = tool.validate({"other": {"value": 1}})
+    assert isinstance(adopted, ValidationSuccess)
+    assert adopted.value["other"]["child"] is None
+    assert isinstance(tool.validate({"other": {"value": "x"}}), ValidationFailure)
 
 
 def test_stdlib_scalars_and_bare_tuple() -> None:
