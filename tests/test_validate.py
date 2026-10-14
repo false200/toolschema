@@ -81,6 +81,27 @@ def test_validate_fixed_tuple_prefix_items() -> None:
     assert isinstance(boolean, ValidationFailure)
     assert any(issue.path == ("value", 0) for issue in boolean.issues)
 
+    # Draft 2020-12: items false means no items after prefixItems.
+    closed = {
+        "type": "object",
+        "properties": {
+            "value": {
+                "type": "array",
+                "prefixItems": [{"type": "integer"}],
+                "items": False,
+            }
+        },
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    assert isinstance(validate_arguments({"value": [1]}, closed), ValidationSuccess)
+    extra = validate_arguments({"value": [1, "x"]}, closed)
+    assert isinstance(extra, ValidationFailure)
+    assert any("extra items" in issue.message for issue in extra.issues)
+    empty_only = {"type": "object", "properties": {"value": {"type": "array", "items": False}}}
+    assert isinstance(validate_arguments({"value": []}, empty_only), ValidationSuccess)
+    assert isinstance(validate_arguments({"value": [1]}, empty_only), ValidationFailure)
+
 
 def test_validate_tuple_nested_in_list() -> None:
     def rows(items: list[tuple[int, str]]) -> int:

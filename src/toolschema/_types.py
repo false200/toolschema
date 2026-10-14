@@ -64,6 +64,30 @@ def _load_final_markers() -> frozenset[Any]:
 
 
 _FINAL_MARKERS = _load_final_markers()
+
+
+def _load_self_types() -> frozenset[Any]:
+    """Collect ``Self`` from typing and typing_extensions.
+
+    They are different objects when both modules exist. Annotations may use
+    either one.
+    """
+    found: set[Any] = set()
+    for module_name in ("typing", "typing_extensions"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        marker = getattr(module, "Self", None)
+        if marker is not None:
+            found.add(marker)
+    return frozenset(found)
+
+
+_SELF_TYPES = _load_self_types()
+# Class that owns the function currently passed to schema(). Field annotations
+# use the structured-type stack instead, so a nested class stays itself.
+_SELF_CLASS: ContextVar[Any] = ContextVar("toolschema_self_class", default=None)
 _SEQUENCE_ORIGINS = frozenset(
     {
         list,
@@ -270,6 +294,9 @@ def _dataclass_body(tp: type[Any]) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     required: list[str] = []
     for field in dataclasses.fields(tp):
+        if not field.init:
+            # init=False is not a constructor argument.
+            continue
         annotation = hints.get(field.name, Any)
         properties[field.name] = _type_to_schema(annotation)
         if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
@@ -329,6 +356,8 @@ def _flag_to_schema(tp: type[enum.Enum]) -> dict[str, Any]:
     """Schema for every value ``tp(...)`` accepts.
 
     Listing only the members drops ``0`` and combinations such as ``R | W``.
+    A combination that ``tp`` rejects is left out. ``list()`` hides an inverted
+    member (``NOT_R = ~1``); that value is still included.
     ``IntFlag`` accepts any integer, including bits that are not defined.
     """
     if issubclass(tp, enum.IntFlag):
@@ -343,8 +372,23 @@ def _flag_to_schema(tp: type[enum.Enum]) -> dict[str, Any]:
         for index, member in enumerate(members):
             if mask & (1 << index):
                 combined |= member.value
-        if combined not in values:
-            values.append(combined)
+        if combined in values:
+            continue
+        try:
+            tp(combined)
+        except ValueError:
+            continue
+        values.append(combined)
+    # list() hides an inverted member such as ``NOT_R = ~1``.
+    for member in tp.__members__.values():
+        value = member.value
+        if value in values:
+            continue
+        try:
+            tp(value)
+        except ValueError:
+            continue
+        values.append(value)
     return {"enum": values}
 
 
@@ -416,8 +460,21 @@ def _alias_value(tp: Any) -> Any | None:
     return value
 
 
+def _self_to_schema(tp: Any) -> dict[str, Any]:
+    """Resolve ``Self`` to the class being built, or the class that owns the function."""
+    state = _STRUCT_STATE.get()
+    if state is not None and state.building:
+        return _type_to_schema(next(reversed(state.building)))
+    owner = _SELF_CLASS.get()
+    if owner is not None:
+        return _type_to_schema(owner)
+    raise TypeError(f"Unsupported type annotation: {tp!r}")
+
+
 def _type_to_schema(tp: Any) -> dict[str, Any]:
     tp = _collapse_redundant_none(tp)
+    if tp in _SELF_TYPES:
+        return _self_to_schema(tp)
     alias = _alias_value(tp)
     if alias is not None:
         seen = _ALIAS_SEEN.get()

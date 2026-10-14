@@ -48,7 +48,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 | `Literal[1, 2]` | `{"enum": [1, 2]}` |
 | `Literal[Color.RED]` | `{"enum": ["red"]}` (the member value) |
 | `class Color(str, Enum)` | `{"enum": ["red", "green", ...]}` |
-| `class Perm(Flag)` | `{"enum": [0, 1, 2, 3]}` (zero and every combination). `IntFlag` is an integer, because any bit pattern is allowed. More than 8 members stays an integer. |
+| `class Perm(Flag)` | `{"enum": [0, 1, 2, 3]}` (zero and every combination `Perm` accepts). A value `Perm` rejects is omitted. An inverted member such as `NOT_R = ~1` is included even though `list(Perm)` hides it. `IntFlag` is an integer, because any bit pattern is allowed. More than 8 members stays an integer. |
 | `datetime`, `time` | `{"type": "string"}` |
 | `date` | `{"type": "string", "format": "date"}` |
 | `UUID` | `{"type": "string", "format": "uuid"}` |
@@ -63,11 +63,11 @@ Implemented in `toolschema._types.type_to_schema()`.
 | Python | JSON Schema |
 |--------|-------------|
 | `TypedDict` | `object` with `properties`; `required` follows TypedDict rules |
-| `@dataclass` | `object` with fields, defaults, required |
+| `@dataclass` | `object` with fields, defaults, required. `init=False` fields are omitted. `Self` is that dataclass. |
 | `NamedTuple` | `object` with fields, defaults, required |
 | Pydantic `BaseModel` | `model_json_schema()`, with nested models inlined. Circular models keep `$ref` and `$defs` on the enclosing document so `#/$defs/` resolves. |
 
-A dataclass, TypedDict, or NamedTuple that refers to itself (or cycles through another structured type) is emitted the same way: `$ref` plus `$defs` on the enclosing document. Nested structured types that are not part of a cycle stay inlined.
+A dataclass, TypedDict, or NamedTuple that refers to itself (or cycles through another structured type) is emitted the same way: `$ref` plus `$defs` on the enclosing document. `Self` in one of those types is that type. On a method, `Self` is the class that defined the method. Nested structured types that are not part of a cycle stay inlined.
 
 `TypedDict.__total__` is only that class's own flag. A `total=False` subclass still keeps required keys inherited from a parent. `Required` and `NotRequired` are honored, including under `from __future__ import annotations`. `Annotated` and `Field` metadata on TypedDict and dataclass fields is kept (`description`, `minLength`, and the other `Field` constraints). On a list or set, `min_length` and `max_length` are `minItems` and `maxItems`. On a dict or other object, they are `minProperties` and `maxProperties`. A union applies that keyword on each matching branch. `minLength` stays beside `anyOf` when one branch is a string, so `Annotated[str | list[str], Field(min_length=1)]` rejects both `""` and `[]`.
 
