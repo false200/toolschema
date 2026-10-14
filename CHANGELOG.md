@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `to_gemini()` writes `nullable: true` instead of a `NULL` type, and writes tuple schemas as `items` instead of `prefixItems`. Gemini function calling rejects both of those shapes. A mixed tuple keeps `minItems` and `maxItems`; the per-position types become one `anyOf`.
+- A boolean default on `int` or `float` is stored as `0` or `1`. `n: int = True` used to publish `true`, so `validate({})` rejected the omitted argument. A `bool` parameter stays `true` or `false`.
+- `validate()` rejects non-finite numbers (`nan`, `inf`) and object keys that are not strings. Those values are not JSON. `json.dumps` would emit `NaN` or rename the key.
+
 - `Flag` schemas list zero and every combination of members. Listing only the members rejected `0` and `R | W`, including a default of `Perm.R | Perm.W`. `IntFlag` is an integer. A flag with more than 8 members stays an integer.
 - `datetime`, `date`, `time`, `UUID`, `Decimal`, `Path`, and a bare `tuple` map to JSON Schema. Those annotations used to raise `TypeError`. `date` and `UUID` keep their formats. `datetime` and `time` stay plain strings, because a naive default has no timezone.
 

@@ -70,18 +70,52 @@ def test_add_gemini_snapshot() -> None:
     assert schema(fixtures.add).to_gemini() == _load_snapshot("add_gemini.json")
 
 
-def test_gemini_uppercases_prefix_item_types() -> None:
+def test_gemini_tuple_uses_items_and_optional_is_nullable() -> None:
     def pair(value: tuple[int, str]) -> None:
         """Pair two values."""
 
-    prefix = schema(pair).to_gemini()["parameters"]["properties"]["value"]["prefixItems"]
-    assert prefix == [{"type": "INTEGER"}, {"type": "STRING"}]
+    prop = schema(pair).to_gemini()["parameters"]["properties"]["value"]
+    assert "prefixItems" not in prop
+    assert prop["items"] == {"anyOf": [{"type": "INTEGER"}, {"type": "STRING"}]}
+    assert prop["minItems"] == 2
+    assert prop["maxItems"] == 2
+
+    def same(value: tuple[int, int]) -> None:
+        """Two ints."""
+
+    same_prop = schema(same).to_gemini()["parameters"]["properties"]["value"]
+    assert same_prop["items"] == {"type": "INTEGER"}
 
     def rows(items: list[tuple[int, str]]) -> None:
         """Rows of pairs."""
 
-    nested = schema(rows).to_gemini()["parameters"]["properties"]["items"]["items"]["prefixItems"]
-    assert nested == [{"type": "INTEGER"}, {"type": "STRING"}]
+    nested = schema(rows).to_gemini()["parameters"]["properties"]["items"]["items"]
+    assert nested["items"] == {"anyOf": [{"type": "INTEGER"}, {"type": "STRING"}]}
+
+    def greet(name: str | None = None) -> None:
+        """Greet."""
+
+    optional = schema(greet).to_gemini()["parameters"]["properties"]["name"]
+    assert optional["type"] == "STRING"
+    assert optional["nullable"] is True
+    assert optional["default"] is None
+    assert "anyOf" not in optional
+    assert "NULL" not in json.dumps(optional)
+
+    def city(name: Annotated[str | None, Field(min_length=1)]) -> None:
+        """City."""
+
+    limited = schema(city).to_gemini()["parameters"]["properties"]["name"]
+    assert limited["type"] == "STRING"
+    assert limited["nullable"] is True
+    assert limited["minLength"] == 1
+
+    def either(value: int | str | None) -> None:
+        """Either."""
+
+    union = schema(either).to_gemini()["parameters"]["properties"]["value"]
+    assert union["nullable"] is True
+    assert union["anyOf"] == [{"type": "INTEGER"}, {"type": "STRING"}]
 
 
 class _UnionChoice:

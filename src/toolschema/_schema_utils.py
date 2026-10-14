@@ -21,6 +21,10 @@ def schema_with_default(schema: dict[str, Any], value: Any) -> dict[str, Any]:
     is left as it is.
     """
     rendered = json_schema_default(value)
+    if isinstance(rendered, bool) and schema.get("type") in {"integer", "number"}:
+        # shortcut: integer and number schemas only, coerce inside unions and
+        # containers when that default must round-trip.
+        rendered = int(rendered)
     if rendered is not None or _schema_allows_null(schema):
         return {**schema, "default": rendered}
     body = dict(schema)
