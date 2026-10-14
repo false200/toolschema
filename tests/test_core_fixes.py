@@ -1167,6 +1167,49 @@ def test_none_default_is_nullable() -> None:
     assert isinstance(explicit, ValidationSuccess)
 
 
+@dataclasses.dataclass
+class _BoolDefaultRow:
+    n: int = True
+
+
+def test_bool_default_on_a_number_is_a_json_number() -> None:
+    def flag(n: int = True, ratio: float = False, enabled: bool = True) -> int:
+        """Flag."""
+        return n
+
+    props = schema(flag).parameters["properties"]
+    assert props["n"] == {"type": "integer", "default": 1}
+    assert props["ratio"] == {"type": "number", "default": 0}
+    assert props["enabled"] == {"type": "boolean", "default": True}
+    filled = schema(flag).validate({})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"n": 1, "ratio": 0, "enabled": True}
+
+    def take(row: _BoolDefaultRow) -> None:
+        """Take."""
+
+    assert schema(take).parameters["properties"]["row"]["properties"]["n"]["default"] == 1
+    taken = schema(take).validate({"row": {}})
+    assert isinstance(taken, ValidationSuccess)
+    assert taken.value == {"row": {"n": 1}}
+
+
+def test_validate_rejects_non_json_numbers_and_keys() -> None:
+    def score(n: float, tags: dict[str, str]) -> float:
+        """Score."""
+        return n
+
+    tool = schema(score)
+    assert isinstance(tool.validate({"n": 1.5, "tags": {"a": "b"}}), ValidationSuccess)
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        failed = tool.validate({"n": bad, "tags": {}})
+        assert isinstance(failed, ValidationFailure)
+        assert any(issue.path == ("n",) for issue in failed.issues)
+    keyed = tool.validate({"n": 1.0, "tags": {1: "a"}})
+    assert isinstance(keyed, ValidationFailure)
+    assert any("not a string" in issue.message for issue in keyed.issues)
+
+
 def test_list_and_dict_default_factory_are_filled() -> None:
     def hold(bag: _FactoryBag) -> None:
         """Hold."""

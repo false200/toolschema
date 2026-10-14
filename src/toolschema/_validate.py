@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import math
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -103,7 +104,9 @@ def _matches_type(value: Any, expected: str) -> bool:
     if expected == "integer":
         return isinstance(value, int) and not isinstance(value, bool)
     if expected == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        return isinstance(value, int) or math.isfinite(value)
     if expected == "string":
         return isinstance(value, str)
     if expected == "array":
@@ -650,6 +653,15 @@ def _validate_value(
         "object" in types or (not types and "properties" in schema)
     )
     if object_like:
+        for key in value:
+            if not isinstance(key, str):
+                issues.append(
+                    _issue(
+                        f"Object key {key!r} is not a string",
+                        path=path,
+                        kind=ValidationIssueKind.TYPE,
+                    )
+                )
         properties = schema.get("properties", {})
         required = set(schema.get("required", []))
 

@@ -96,7 +96,7 @@ payload = definition.to_gemini()
 # }
 ```
 
-**Quirk:** Types are uppercased. Output schema not included in v1.0.
+**Quirk:** Types are uppercased. Optional values use `nullable`. Tuples use `items`. Output schema not included in v1.0.
 
 ## Comparison table
 
