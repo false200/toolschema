@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from toolschema._introspect import accepts_json_keywords
 from toolschema._ir import ToolDefinition
 from toolschema._schema_utils import strip_canonical_meta
 
@@ -15,7 +16,7 @@ def to_pydantic_ai_tool(tool: ToolDefinition, fn: Callable[..., Any]) -> dict[st
         "name": function["name"],
         "description": function["description"],
         "parameters_json_schema": strip_canonical_meta(tool.parameters),
-        "function": fn,
+        "function": accepts_json_keywords(fn),
     }
 
 
@@ -32,7 +33,7 @@ def from_toolschema(tool: ToolDefinition, fn: Callable[..., Any]) -> Any:
     openai_tool = tool.to_openai()
     function = openai_tool["function"]
     return Tool.from_schema(
-        function=fn,
+        function=accepts_json_keywords(fn),
         name=function["name"],
         description=function["description"],
         json_schema=strip_canonical_meta(tool.parameters),

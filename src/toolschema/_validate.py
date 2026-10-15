@@ -261,7 +261,9 @@ def _is_multiple(value: int | float, multiple: Any) -> bool:
         quotient = Decimal(str(value)) / Decimal(str(multiple))
     except (InvalidOperation, ValueError):
         return False
-    return quotient == quotient.to_integral_value()
+    nearest = quotient.to_integral_value()
+    # 0.01 + 0.05 is a few ulps above 0.06, so the quotient is not integral.
+    return abs(quotient - nearest) <= Decimal("1e-9")
 
 
 # JSON Schema draft 2020-12 defines these formats with the RFC 3339 and
@@ -443,7 +445,9 @@ def _with_defaults(
                 filled[key] = item
         for key, prop in properties.items():
             if key not in filled and isinstance(prop, dict) and "default" in prop:
-                filled[key] = copy_json_value(prop["default"])
+                # The default can itself omit nested defaults. Walk it the same
+                # way as a value the caller passed in.
+                filled[key] = _with_defaults(copy_json_value(prop["default"]), prop, defs, seen)
         return filled
     if isinstance(value, list) and (
         schema.get("type") == "array"

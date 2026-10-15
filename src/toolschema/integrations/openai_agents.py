@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from toolschema._introspect import accepts_json_keywords, call_json
 from toolschema._ir import ToolDefinition
 
 
@@ -40,7 +41,7 @@ def to_agents_function_tool(
 
     async def on_invoke_tool(_ctx: Any, input_json: str) -> Any:
         payload = json.loads(input_json) if input_json else {}
-        result = fn(**payload)
+        result = call_json(fn, payload)
         if inspect.isawaitable(result):
             return await result
         return result
@@ -59,7 +60,7 @@ def to_openai_agent_tool(tool: ToolDefinition, fn: Callable[..., Any]) -> dict[s
     payload = tool.to_openai()
     return {
         **payload,
-        "callable": fn,
+        "callable": accepts_json_keywords(fn),
         "agents_tool": to_agents_function_tool(tool, fn, strict=False),
     }
 

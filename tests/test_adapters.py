@@ -117,6 +117,27 @@ def test_gemini_tuple_uses_items_and_optional_is_nullable() -> None:
     assert union["nullable"] is True
     assert union["anyOf"] == [{"type": "INTEGER"}, {"type": "STRING"}]
 
+    closed = ToolDefinition(
+        name="pair",
+        description="Pair.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "array",
+                    "prefixItems": [{"type": "integer"}, {"type": "string"}],
+                    "items": False,
+                }
+            },
+            "required": ["value"],
+        },
+    )
+    closed_prop = closed.to_gemini()["parameters"]["properties"]["value"]
+    assert "prefixItems" not in closed_prop
+    assert closed_prop["items"] == {"anyOf": [{"type": "INTEGER"}, {"type": "STRING"}]}
+    assert closed_prop["maxItems"] == 2
+    assert closed_prop.get("items") is not False
+
 
 class _UnionChoice:
     @staticmethod

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, get_type_hints
 
@@ -156,6 +156,55 @@ def _build_output_schema(fn: Callable[..., Any]) -> dict[str, Any] | None:
     if return_type is inspect.Signature.empty or return_type is None or return_type is type(None):
         return None
     return type_to_schema(return_type)
+
+
+def call_json(fn: Callable[..., Any], arguments: Mapping[str, Any]) -> Any:
+    """Call ``fn`` with a JSON object of argument names.
+
+    ``fn(**arguments)`` raises ``TypeError`` when a parameter is positional-only
+    (``def f(a, /)``). Those values are passed by position. Every other name
+    stays a keyword, including names ``fn`` does not accept.
+    """
+    sig = inspect.signature(fn)
+    positional = [
+        param
+        for param in sig.parameters.values()
+        if param.kind is inspect.Parameter.POSITIONAL_ONLY
+    ]
+    if not positional:
+        return fn(**arguments)
+    args: list[Any] = []
+    for param in positional:
+        if param.name in arguments:
+            args.append(arguments[param.name])
+        elif param.default is not inspect.Parameter.empty:
+            args.append(param.default)
+        else:
+            name = getattr(fn, "__name__", "function")
+            raise TypeError(f"{name}() missing required argument {param.name!r}")
+    skip = {param.name for param in positional}
+    kwargs = {name: value for name, value in arguments.items() if name not in skip}
+    return fn(*args, **kwargs)
+
+
+def accepts_json_keywords(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Return ``fn``, or a keyword wrapper when it has positional-only parameters."""
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return fn
+    if not any(
+        param.kind is inspect.Parameter.POSITIONAL_ONLY for param in sig.parameters.values()
+    ):
+        return fn
+
+    def wrapper(**arguments: Any) -> Any:
+        return call_json(fn, arguments)
+
+    wrapper.__name__ = getattr(fn, "__name__", "tool")
+    wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__name__)
+    return wrapper
 
 
 def schema(fn: Callable[..., Any]) -> ToolDefinition:

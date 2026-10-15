@@ -58,6 +58,15 @@ def extract_annotated_metadata(metadata: tuple[Any, ...]) -> tuple[type[Any], di
     return base_type, extras
 
 
+def _is_fixed_tuple(schema: dict[str, Any]) -> bool:
+    return schema.get("type") == "array" and "prefixItems" in schema
+
+
+def _without_string_length(extras: dict[str, Any]) -> dict[str, Any]:
+    """Drop string length keywords. They do not apply to a fixed tuple."""
+    return {key: value for key, value in extras.items() if key not in {"minLength", "maxLength"}}
+
+
 def _schemas_of(schema: dict[str, Any], json_type: str) -> list[dict[str, Any]] | None:
     """Return every non-null branch of ``json_type``, or None when they are mixed.
 
@@ -120,6 +129,8 @@ def _length_on_mixed_union(base_schema: dict[str, Any], extras: dict[str, Any]) 
     """
     branches = base_schema.get("anyOf")
     if not isinstance(branches, list):
+        if _is_fixed_tuple(base_schema):
+            return {**base_schema, **_without_string_length(extras)}
         return {**base_schema, **extras}
 
     items: dict[str, Any] = {}
@@ -149,6 +160,13 @@ def _length_on_mixed_union(base_schema: dict[str, Any], extras: dict[str, Any]) 
                 has_string = True
             placed.append(branch)
     if not changed:
+        # No string branch, so minLength would not apply. A fixed tuple in the
+        # union used to keep that keyword anyway.
+        drop_length = not has_string and any(
+            isinstance(branch, dict) and _is_fixed_tuple(branch) for branch in branches
+        )
+        if drop_length:
+            return {**base_schema, **_without_string_length(extras)}
         return {**base_schema, **extras}
 
     rest = dict(extras)

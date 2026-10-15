@@ -26,8 +26,14 @@ except ImportError:  # Python 3.10
 import pytest
 
 from toolschema import Field, schema, tool
+from toolschema._introspect import accepts_json_keywords, call_json
 from toolschema._types import type_to_schema
-from toolschema._validate import ValidationFailure, ValidationSuccess, validate_arguments
+from toolschema._validate import (
+    ValidationFailure,
+    ValidationSuccess,
+    _is_multiple,
+    validate_arguments,
+)
 
 _ITEMS = ["a"]
 _NESTED = {"nums": [1]}
@@ -476,6 +482,68 @@ def test_nested_dataclass_default_is_filled() -> None:
     result = schema(greet).validate({"user": {"name": "Ada"}})
     assert isinstance(result, ValidationSuccess)
     assert result.value["user"]["role"] == "admin"
+
+    partial = {"name": "Ada"}
+
+    def save(user: _User = partial) -> None:
+        """Save."""
+
+    omitted = schema(save).validate({})
+    assert isinstance(omitted, ValidationSuccess)
+    assert omitted.value == {"user": {"name": "Ada", "role": "admin"}}
+
+
+def test_field_length_on_a_fixed_tuple_stays_a_tuple_length() -> None:
+    def pair(value: Annotated[tuple[int, str], Field(min_length=5, description="Pair")]) -> None:
+        """Pair."""
+
+    prop = schema(pair).parameters["properties"]["value"]
+    assert prop["minItems"] == 2
+    assert prop["maxItems"] == 2
+    assert prop["description"] == "Pair"
+    assert "minLength" not in prop
+    assert isinstance(schema(pair).validate({"value": [1, "a"]}), ValidationSuccess)
+    description = schema(pair).to_anthropic()["input_schema"]["properties"]["value"]["description"]
+    assert "min length" not in description
+
+    def either(
+        value: Annotated[tuple[int, str] | tuple[int, int, int], Field(min_length=5)],
+    ) -> None:
+        """Either."""
+
+    union = schema(either).parameters["properties"]["value"]
+    assert "minLength" not in union
+    assert isinstance(schema(either).validate({"value": [1, "a"]}), ValidationSuccess)
+
+
+def test_multiple_of_allows_a_float_sum() -> None:
+    assert _is_multiple(0.01 + 0.05, 0.01)
+    assert _is_multiple(2, 2)
+    assert not _is_multiple(0.015, 0.01)
+    assert not _is_multiple(3, 2)
+
+
+def test_call_json_passes_positional_only_by_position() -> None:
+    def add(a: int, /, b: int = 1) -> int:
+        """Add."""
+        return a + b
+
+    assert call_json(add, {"a": 2}) == 3
+    assert call_json(add, {"a": 2, "b": 4}) == 6
+    with pytest.raises(TypeError, match="missing required argument 'a'"):
+        call_json(add, {})
+    with pytest.raises(TypeError):
+        call_json(add, {"a": 2, "c": 1})
+
+    def plain(a: int, b: int = 1) -> int:
+        """Add."""
+        return a + b
+
+    assert call_json(plain, {"a": 2}) == 3
+    assert accepts_json_keywords(plain) is plain
+    wrapped = accepts_json_keywords(add)
+    assert wrapped is not add
+    assert wrapped(a=2, b=4) == 6
 
 
 class _StaticBox:

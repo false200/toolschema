@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from toolschema._introspect import accepts_json_keywords
 from toolschema._ir import ToolDefinition
 from toolschema._schema_utils import strip_canonical_meta
 
@@ -18,7 +19,7 @@ def from_toolschema(tool: ToolDefinition, fn: Callable[..., Any]) -> Any:
         ) from exc
 
     return StructuredTool.from_function(
-        fn,
+        accepts_json_keywords(fn),
         name=tool.name,
         description=tool.description,
         args_schema=strip_canonical_meta(tool.parameters),
