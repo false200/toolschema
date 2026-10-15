@@ -123,10 +123,19 @@ def _use_items(result: dict[str, Any]) -> dict[str, Any]:
     shortcut: tuple positions are not kept, use prefixItems if Gemini accepts it.
     """
     prefix = result.pop("prefixItems", None)
-    if "items" in result or not isinstance(prefix, list):
+    if not isinstance(prefix, list):
         return result
     schemas = [item for item in prefix if isinstance(item, dict)]
+    tail = result.pop("items", None)
+    if isinstance(tail, dict):
+        schemas.append(tail)
+    elif tail is False and "maxItems" not in result:
+        # items: false forbids anything past the prefix. One items schema would
+        # allow a longer array, so keep that ceiling.
+        result["maxItems"] = len(prefix)
     if not schemas:
+        if tail is not None:
+            result["items"] = tail
         return result
     if all(item == schemas[0] for item in schemas):
         result["items"] = schemas[0]

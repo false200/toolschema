@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `Field(min_length=...)` on a fixed tuple is not emitted as `minLength`. That keyword does not apply to arrays, so `tuple[int, str]` with `min_length=5` still accepted `[1, "a"]`, and the Anthropic description said "min length 5". The tuple keeps `minItems` and `maxItems`.
+- An omitted argument whose default is a partial object is filled the same way as an object the caller passed in. `user: User = {"name": "Ada"}` used to leave out `role`, even though that field's default is `"admin"`.
+- `validate()` treats a float a few ulps off a multiple as that multiple. `0.01 + 0.05` was rejected by `multipleOf: 0.01`.
+- `to_gemini()` keeps tuple item types when the schema uses `prefixItems` together with `items: false`. The prefix was dropped, so the array became `items: false` and could not hold the required elements.
+- Positional-only parameters can be called with the JSON object `validate()` returns. `fn(**result.value)` raised `TypeError` for `def add(a: int, /)`. Integrations pass those arguments by position.
+
 - `Flag` enum values are only those the flag accepts. `R | W` was listed for a flag that rejects that combination, and an inverted member (`NOT_R = ~1`) was missing, so `validate({})` rejected a default of `NOT_R`.
 - `Self` in a dataclass, TypedDict, or NamedTuple is that type, including `child: Self | None`. On a method, `Self` is the class that defined the method. Both used to raise `TypeError`.
 - Dataclass fields with `init=False` are omitted. They were required, so `validate` demanded a value the constructor refuses.
