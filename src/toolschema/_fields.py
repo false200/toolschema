@@ -40,6 +40,49 @@ def field_to_schema_extras(field: Field) -> dict[str, Any]:
     return extras
 
 
+# Attribute on an Annotated extra, and the JSON Schema keyword it publishes.
+# Pydantic Field and annotated_types use these names; this library's Field does too.
+_CONSTRAINT_ATTRS = (
+    ("min_length", "minLength"),
+    ("max_length", "maxLength"),
+    ("ge", "minimum"),
+    ("le", "maximum"),
+    ("gt", "exclusiveMinimum"),
+    ("lt", "exclusiveMaximum"),
+    ("multiple_of", "multipleOf"),
+    ("pattern", "pattern"),
+)
+
+
+def _constraint_value(key: str, value: Any) -> Any:
+    if key == "pattern":
+        return value if isinstance(value, str) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
+
+
+def _annotated_constraint_extras(item: Any, *, nested: bool) -> dict[str, Any]:
+    """Read constraints from pydantic ``Field`` or ``annotated_types`` objects.
+
+    ``Field(min_length=2)`` stores them on ``metadata``, not on the field itself.
+    """
+    extras: dict[str, Any] = {}
+    description = getattr(item, "description", None)
+    if isinstance(description, str) and description:
+        extras["description"] = description
+    if nested:
+        pieces = getattr(item, "metadata", None)
+        if isinstance(pieces, (list, tuple)):
+            for piece in pieces:
+                extras.update(_annotated_constraint_extras(piece, nested=False))
+    for attr, key in _CONSTRAINT_ATTRS:
+        value = _constraint_value(key, getattr(item, attr, None))
+        if value is not None:
+            extras[key] = value
+    return extras
+
+
 def extract_annotated_metadata(metadata: tuple[Any, ...]) -> tuple[type[Any], dict[str, Any]]:
     """Extract base type and merged schema extras from Annotated metadata."""
     if not metadata:
@@ -54,6 +97,8 @@ def extract_annotated_metadata(metadata: tuple[Any, ...]) -> tuple[type[Any], di
         elif isinstance(item, str):
             if "description" not in extras:
                 extras["description"] = item
+        else:
+            extras.update(_annotated_constraint_extras(item, nested=True))
 
     return base_type, extras
 

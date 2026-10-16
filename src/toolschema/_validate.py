@@ -257,13 +257,18 @@ def _validate_constraints(
 def _is_multiple(value: int | float, multiple: Any) -> bool:
     if isinstance(multiple, bool) or not isinstance(multiple, (int, float)) or multiple == 0:
         return False
+    # An integer multiple is exact. The float tolerance below would treat
+    # 1000000001 as a multiple of 1000000000.
+    if isinstance(value, int) and isinstance(multiple, int):
+        return value % multiple == 0
     try:
         quotient = Decimal(str(value)) / Decimal(str(multiple))
     except (InvalidOperation, ValueError):
         return False
     nearest = quotient.to_integral_value()
     # 0.01 + 0.05 is a few ulps above 0.06, so the quotient is not integral.
-    return abs(quotient - nearest) <= Decimal("1e-9")
+    # 1e-9 was wide enough to accept an integer that is one away from a large multiple.
+    return abs(quotient - nearest) <= Decimal("1e-12")
 
 
 # JSON Schema draft 2020-12 defines these formats with the RFC 3339 and

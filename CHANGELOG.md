@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `Annotated` constraints from pydantic `Field` and `annotated_types` are published. `Field(min_length=2)` used to become a plain string, so `validate` accepted `"a"`.
+- `multipleOf` no longer treats `1000000001` as a multiple of `1000000000`. Integers are exact. A float a few ulps off, such as `0.01 + 0.05`, still passes.
+- Dataclass `InitVar` fields are part of the schema. They were omitted, so `validate` accepted an object the constructor rejects.
+
 - `Field(min_length=...)` on a fixed tuple is not emitted as `minLength`. That keyword does not apply to arrays, so `tuple[int, str]` with `min_length=5` still accepted `[1, "a"]`, and the Anthropic description said "min length 5". The tuple keeps `minItems` and `maxItems`.
 - An omitted argument whose default is a partial object is filled the same way as an object the caller passed in. `user: User = {"name": "Ada"}` used to leave out `role`, even though that field's default is `"admin"`.
 - `validate()` treats a float a few ulps off a multiple as that multiple. `0.01 + 0.05` was rejected by `multipleOf: 0.01`.
