@@ -521,6 +521,77 @@ def test_multiple_of_allows_a_float_sum() -> None:
     assert _is_multiple(2, 2)
     assert not _is_multiple(0.015, 0.01)
     assert not _is_multiple(3, 2)
+    # A tolerance of 1e-9 treated this as a multiple.
+    assert not _is_multiple(1_000_000_001, 1_000_000_000)
+    assert _is_multiple(1_000_000_000, 1_000_000_000)
+    assert not _is_multiple(10**18 + 1, 10**18)
+
+
+def _as_argument(annotation: Any, value: Any) -> ValidationSuccess | ValidationFailure:
+    """Validate one value against a type. Local classes cannot be function annotations here."""
+    parameters = {
+        "type": "object",
+        "properties": {"value": type_to_schema(annotation)},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    return validate_arguments({"value": value}, parameters)
+
+
+def test_dataclass_initvar_is_a_constructor_argument() -> None:
+    @dataclasses.dataclass
+    class WithInit:
+        x: dataclasses.InitVar[int]
+        y: int = 0
+        z: dataclasses.InitVar[str] = "hi"
+        hidden: int = dataclasses.field(init=False, default=1)
+
+    prop = type_to_schema(WithInit)
+    assert list(prop["properties"]) == ["x", "y", "z"]
+    assert prop["required"] == ["x"]
+    assert prop["properties"]["z"]["default"] == "hi"
+    assert isinstance(_as_argument(WithInit, {}), ValidationFailure)
+    filled = _as_argument(WithInit, {"x": 1})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"value": {"x": 1, "y": 0, "z": "hi"}}
+
+
+def test_annotated_constraint_objects_are_published() -> None:
+    class _MinLen:
+        def __init__(self, n: int) -> None:
+            self.min_length = n
+
+    class _Info:
+        def __init__(self) -> None:
+            self.description = "City"
+            self.metadata = [_MinLen(2)]
+
+    prop = type_to_schema(Annotated[str, _Info()])
+    assert prop == {"type": "string", "description": "City", "minLength": 2}
+    assert isinstance(_as_argument(Annotated[str, _Info()], "a"), ValidationFailure)
+    assert isinstance(_as_argument(Annotated[str, _Info()], "Ada"), ValidationSuccess)
+
+    class _Multiple:
+        def __init__(self, n: float) -> None:
+            self.multiple_of = n
+
+    count = Annotated[int, _Multiple(1_000_000_000)]
+    assert isinstance(_as_argument(count, 1_000_000_001), ValidationFailure)
+    assert isinstance(_as_argument(count, 2_000_000_000), ValidationSuccess)
+
+    class _Hundredth:
+        multiple_of = 0.01
+
+    price = Annotated[float, _Hundredth()]
+    assert isinstance(_as_argument(price, 0.01 + 0.05), ValidationSuccess)
+    assert isinstance(_as_argument(price, 0.015), ValidationFailure)
+
+    class _Bound:
+        min_length = 1
+
+    labels = Annotated[list[str], _Bound()]
+    assert type_to_schema(labels)["minItems"] == 1
+    assert isinstance(_as_argument(labels, []), ValidationFailure)
 
 
 def test_call_json_passes_positional_only_by_position() -> None:

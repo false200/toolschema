@@ -63,7 +63,7 @@ Implemented in `toolschema._types.type_to_schema()`.
 | Python | JSON Schema |
 |--------|-------------|
 | `TypedDict` | `object` with `properties`; `required` follows TypedDict rules |
-| `@dataclass` | `object` with fields, defaults, required. `init=False` fields are omitted. `Self` is that dataclass. |
+| `@dataclass` | `object` with fields, defaults, required. `init=False` fields are omitted. `InitVar` fields are included. `Self` is that dataclass. |
 | `NamedTuple` | `object` with fields, defaults, required |
 | Pydantic `BaseModel` | `model_json_schema()`, with nested models inlined. Circular models keep `$ref` and `$defs` on the enclosing document so `#/$defs/` resolves. |
 
@@ -84,6 +84,8 @@ Annotated[str, "City name"]
 ```
 
 → `{"type": "string", "description": "City name"}`
+
+An `Annotated` extra that carries `min_length`, `ge`, `multiple_of`, `pattern`, or a `metadata` list of those objects (the shape pydantic `Field` uses) publishes the same keywords as `Field`.
 
 ## Defaults
 

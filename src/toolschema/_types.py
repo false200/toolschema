@@ -285,6 +285,16 @@ def _typeddict_body(tp: type[Any]) -> dict[str, Any]:
     return schema
 
 
+def _unwrap_initvar(annotation: Any) -> Any:
+    """Return the type inside ``InitVar``, which ``fields()`` does not list.
+
+    ``InitVar[int]`` is an instance, not a generic alias, so ``get_origin`` is None.
+    """
+    if isinstance(annotation, dataclasses.InitVar):
+        return annotation.type
+    return annotation
+
+
 def _dataclass_to_schema(tp: type[Any]) -> dict[str, Any]:
     return _structured(tp, lambda: _dataclass_body(tp))
 
@@ -293,11 +303,12 @@ def _dataclass_body(tp: type[Any]) -> dict[str, Any]:
     hints = get_type_hints(tp, include_extras=True)
     properties: dict[str, Any] = {}
     required: list[str] = []
-    for field in dataclasses.fields(tp):
+    # fields() hides InitVar. It is still a constructor argument.
+    for field in tp.__dataclass_fields__.values():
         if not field.init:
             # init=False is not a constructor argument.
             continue
-        annotation = hints.get(field.name, Any)
+        annotation = _unwrap_initvar(hints.get(field.name, Any))
         properties[field.name] = _type_to_schema(annotation)
         if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
             required.append(field.name)
