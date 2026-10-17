@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import fixtures
 
-from toolschema import Field, ToolDefinition, schema
+from toolschema import Field, ToolDefinition, ValidationFailure, ValidationSuccess, schema
 from toolschema.adapters._inline_refs import inline_refs
 
 SNAPSHOTS = Path(__file__).parent / "snapshots"
@@ -137,6 +137,28 @@ def test_gemini_tuple_uses_items_and_optional_is_nullable() -> None:
     assert closed_prop["items"] == {"anyOf": [{"type": "INTEGER"}, {"type": "STRING"}]}
     assert closed_prop["maxItems"] == 2
     assert closed_prop.get("items") is not False
+
+
+def test_gemini_literal_null_is_nullable() -> None:
+    def choose(mode: Literal["a", None] = None, count: Literal[1, None] = None) -> None:
+        """Choose."""
+
+    tool = schema(choose)
+    assert isinstance(tool.validate({}), ValidationSuccess)
+    assert isinstance(tool.validate({"mode": "a", "count": 1}), ValidationSuccess)
+    assert isinstance(tool.validate({"mode": "b"}), ValidationFailure)
+
+    props = tool.to_gemini()["parameters"]["properties"]
+    assert props["mode"] == {
+        "type": "STRING",
+        "enum": ["a"],
+        "nullable": True,
+        "default": None,
+    }
+    assert props["count"]["type"] == "INTEGER"
+    assert props["count"]["enum"] == [1]
+    assert props["count"]["nullable"] is True
+    assert None not in props["count"]["enum"]
 
 
 class _UnionChoice:
