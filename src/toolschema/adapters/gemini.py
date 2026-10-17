@@ -48,12 +48,30 @@ def _convert_type(schema: dict[str, Any]) -> dict[str, Any]:
             }
         else:
             result[key] = value
+    _drop_null_enum(result)
     enum_values = result.get("enum")
     if "type" not in result and isinstance(enum_values, list):
         inferred = _enum_type(enum_values)
         if inferred is not None:
             result["type"] = inferred
     return _use_items(_fold_nullable(result))
+
+
+def _drop_null_enum(result: dict[str, Any]) -> None:
+    """Replace a null enum entry with ``nullable``.
+
+    ``Literal["a", None]`` is an enum that contains null. Gemini's type list
+    has no null, same as a null union arm.
+    """
+    values = result.get("enum")
+    if not isinstance(values, list) or not any(item is None for item in values):
+        return
+    kept = [item for item in values if item is not None]
+    result["nullable"] = True
+    if kept:
+        result["enum"] = kept
+    else:
+        result.pop("enum", None)
 
 
 def _is_null_branch(branch: dict[str, Any]) -> bool:

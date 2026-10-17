@@ -25,6 +25,9 @@ def schema_with_default(schema: dict[str, Any], value: Any) -> dict[str, Any]:
         # shortcut: integer and number schemas only, coerce inside unions and
         # containers when that default must round-trip.
         rendered = int(rendered)
+    elif schema.get("type") == "integer" and isinstance(rendered, float) and rendered.is_integer():
+        # 1.0 is a JSON number. An integer schema rejects it, so validate({}) fails.
+        rendered = int(rendered)
     if rendered is not None or _schema_allows_null(schema):
         return {**schema, "default": rendered}
     body = dict(schema)

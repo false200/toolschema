@@ -66,6 +66,27 @@ def _load_final_markers() -> frozenset[Any]:
 _FINAL_MARKERS = _load_final_markers()
 
 
+def _load_classvar_markers() -> frozenset[Any]:
+    """Collect ``ClassVar`` from typing and typing_extensions.
+
+    They can be different objects. ``__dataclass_fields__`` keeps a ClassVar
+    and sets ``init=True``, but it is not a constructor argument.
+    """
+    found: set[Any] = set()
+    for module_name in ("typing", "typing_extensions"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        marker = getattr(module, "ClassVar", None)
+        if marker is not None:
+            found.add(marker)
+    return frozenset(found)
+
+
+_CLASSVAR_MARKERS = _load_classvar_markers()
+
+
 def _load_self_types() -> frozenset[Any]:
     """Collect ``Self`` from typing and typing_extensions.
 
@@ -309,6 +330,9 @@ def _dataclass_body(tp: type[Any]) -> dict[str, Any]:
             # init=False is not a constructor argument.
             continue
         annotation = _unwrap_initvar(hints.get(field.name, Any))
+        if annotation in _CLASSVAR_MARKERS or get_origin(annotation) in _CLASSVAR_MARKERS:
+            # ClassVar is not a constructor argument. __dataclass_fields__ lists it anyway.
+            continue
         properties[field.name] = _type_to_schema(annotation)
         if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
             required.append(field.name)

@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any, Final, Literal, NamedTuple, NewType, TypedDict
+from typing import Annotated, Any, ClassVar, Final, Literal, NamedTuple, NewType, TypedDict
 from uuid import UUID
 
 try:
@@ -554,6 +554,54 @@ def test_dataclass_initvar_is_a_constructor_argument() -> None:
     filled = _as_argument(WithInit, {"x": 1})
     assert isinstance(filled, ValidationSuccess)
     assert filled.value == {"value": {"x": 1, "y": 0, "z": "hi"}}
+
+
+def test_dataclass_classvar_is_not_a_constructor_argument() -> None:
+    @dataclasses.dataclass
+    class Parent:
+        tag: ClassVar[str] = "p"
+        name: str
+
+    @dataclasses.dataclass
+    class Child(Parent):
+        extra: int = 1
+        label: ClassVar = "c"
+
+    prop = type_to_schema(Child)
+    assert list(prop["properties"]) == ["name", "extra"]
+    assert prop["required"] == ["name"]
+    filled = _as_argument(Child, {"name": "Ada"})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"value": {"name": "Ada", "extra": 1}}
+    assert isinstance(_as_argument(Child, {"name": "Ada", "tag": "x"}), ValidationFailure)
+
+
+def test_integral_float_default_on_int_is_an_integer() -> None:
+    def count(n: int = 1.0, whole: int = -2.0) -> None:
+        """Count."""
+
+    props = schema(count).parameters["properties"]
+    assert props["n"]["default"] == 1
+    assert props["whole"]["default"] == -2
+    assert isinstance(props["n"]["default"], int)
+    filled = schema(count).validate({})
+    assert isinstance(filled, ValidationSuccess)
+    assert filled.value == {"n": 1, "whole": -2}
+
+    def odd(n: int = 1.5) -> None:
+        """Odd."""
+
+    assert schema(odd).parameters["properties"]["n"]["default"] == 1.5
+    assert isinstance(schema(odd).validate({}), ValidationFailure)
+
+    @dataclasses.dataclass
+    class Row:
+        n: int = 1.0
+
+    assert type_to_schema(Row)["properties"]["n"]["default"] == 1
+    row = _as_argument(Row, {})
+    assert isinstance(row, ValidationSuccess)
+    assert row.value == {"value": {"n": 1}}
 
 
 def test_annotated_constraint_objects_are_published() -> None:

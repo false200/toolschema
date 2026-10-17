@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Dataclass `ClassVar` fields are omitted. They were treated as constructor arguments, so `schema()` raised `TypeError` on a normal dataclass.
+- An integral float default on `int` is stored as an integer. `n: int = 1.0` published `1.0`, so `validate({})` rejected the omitted argument.
+- `to_gemini()` turns a null entry in `enum` into `nullable`. `Literal["a", None]` used to emit `null` inside `enum` and no type.
+
 - `Annotated` constraints from pydantic `Field` and `annotated_types` are published. `Field(min_length=2)` used to become a plain string, so `validate` accepted `"a"`.
 - `multipleOf` no longer treats `1000000001` as a multiple of `1000000000`. Integers are exact. A float a few ulps off, such as `0.01 + 0.05`, still passes.
 - Dataclass `InitVar` fields are part of the schema. They were omitted, so `validate` accepted an object the constructor rejects.
